@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lunar Impact Simulator</title>
+  <script type="module" crossorigin src="/Lunar/assets/index-R2stQ8xu.js"></script>
+  <link rel="stylesheet" crossorigin href="/Lunar/assets/index-DbuPNm3z.css">
+</head>
+
+<body>
+  <div id="app"></div>
+
+  <div id="ui-container">
+    <h1>LUNAR IMPACT</h1>
+    <div class="stat-box">
+      <p>ENERGY <span id="energy" class="stat-value">0</span></p>
+      <p>DIAMETER <span id="diameter" class="stat-value">0</span></p>
+      <p>DEPTH <span id="depth" class="stat-value">0</span></p>
+    </div>
+    <div id="countdown-box"
+      style="display: none; background: rgba(255, 0, 0, 0.3); padding: 10px; border-radius: 8px; margin-bottom: 8px; border: 1px solid red; text-align: center;">
+      <p style="margin: 0; color: #ff5555; font-weight: bold; font-size: 14px;">IMPACT IN</p>
+      <p style="margin: 0; color: white; font-size: 24px; font-weight: bold;"><span id="time-val">0.00</span> s</p>
+    </div>
+    <div id="chart-container" style="width: 250px; height: 150px;">
+      <canvas id="impactChart"></canvas>
+    </div>
+  </div>
+
+  <div id="ui-controls">
+    <div class="control-group">
+      <label>Velocity <span id="val-velocity" class="value-display">10 m/s</span></label>
+      <input type="range" id="inp-velocity" min="10" max="500" value="10">
+    </div>
+    <div class="control-group">
+      <label>Angle <span id="val-angle" class="value-display">45 deg</span></label>
+      <input type="range" id="inp-angle" min="5" max="90" value="45">
+    </div>
+    <div class="control-group">
+      <label>Mass <span id="val-mass" class="value-display">1000 kg</span></label>
+      <input type="range" id="inp-mass" min="10" max="10000" value="1000">
+    </div>
+    <div class="control-group">
+      <label>Density <span id="val-density" class="value-display">3000 kg/m³</span></label>
+      <input type="range" id="inp-density" min="1500" max="8000" value="3000">
+    </div>
+    <button id="fire-btn">FIRE PROJECTILE</button>
+  </div>
+
+</body>
+
+</html>
