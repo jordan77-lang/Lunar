@@ -15,9 +15,8 @@ export class Projectile {
         density = Number(density) || 3000;
 
         this.radius = Math.pow((3 * mass) / (4 * Math.PI * density), 1 / 3); // Calculate radius from mass & density
-        // Clamp radius for visualization
-        if (isNaN(this.radius) || this.radius <= 0) this.radius = 1;
-        this.visRadius = Math.max(0.2, Math.min(this.radius, 2.0));
+        // Clamp scale for visualization (Planetary scale: 500m min, 10km max)
+        this.visRadius = Math.max(500, Math.min(this.radius * 2, 10000));
     }
 
     init(position, velocity, mass) {

@@ -14,10 +14,10 @@ const soundManager = new SoundManager();
 
 // --- Scene Setup ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111111);
+scene.background = new THREE.Color(0x050505);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 5, 20);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 100, 2000000); // Near/Far planes increased
+camera.position.set(0, 50000, 100000); // 100km out
 camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -43,12 +43,15 @@ const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
 scene.add(ambientLight);
 
 const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-dirLight.position.set(10, 20, 10);
+dirLight.position.set(50000, 100000, 50000);
 dirLight.castShadow = true;
-dirLight.shadow.camera.top = 20;
-dirLight.shadow.camera.bottom = -20;
-dirLight.shadow.camera.left = -20;
-dirLight.shadow.camera.right = 20;
+dirLight.shadow.camera.top = 200000;
+dirLight.shadow.camera.bottom = -200000;
+dirLight.shadow.camera.left = -200000;
+dirLight.shadow.camera.right = 200000;
+dirLight.shadow.bias = -0.0001;
+dirLight.shadow.mapSize.width = 4096;
+dirLight.shadow.mapSize.height = 4096;
 scene.add(dirLight);
 
 // --- Physics World ---
@@ -63,16 +66,17 @@ let projectiles = [];
 
 // --- Parameters ---
 const params = {
-    velocity: 10,
-    angle: 45,
-    mass: 1000, // kg
+    velocity: 10, // km/s
+    angle: 90,
+    mass: 1e8, // kg (Start at min)
     density: 3000, // kg/m^3 (rock)
     reset: () => fireProjectile(),
     target: new THREE.Vector3(0, 0, 0) // Default target center
 };
 
 // --- Targeting Reticule ---
-const reticuleGeo = new THREE.RingGeometry(0.5, 0.8, 32);
+// Scale up reticule (1km size)
+const reticuleGeo = new THREE.RingGeometry(1000, 1500, 32);
 reticuleGeo.rotateX(-Math.PI / 2);
 const reticuleMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
 const reticule = new THREE.Mesh(reticuleGeo, reticuleMat);
@@ -81,7 +85,8 @@ reticule.position.y = 0.1; // Slightly above ground
 scene.add(reticule);
 
 // --- Persistent Target Marker ---
-const markerGeo = new THREE.RingGeometry(0.2, 0.4, 32);
+// --- Persistent Target Marker ---
+const markerGeo = new THREE.RingGeometry(200, 600, 32);
 markerGeo.rotateX(-Math.PI / 2);
 const markerMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 1.0, side: THREE.DoubleSide });
 const targetMarker = new THREE.Mesh(markerGeo, markerMat);
@@ -102,7 +107,7 @@ function onPointerMove(event) {
 
     if (intersects.length > 0) {
         const point = intersects[0].point;
-        reticule.position.set(point.x, 0.1, point.z);
+        reticule.position.set(point.x, 100, point.z); // Lift reticule slightly
         document.body.style.cursor = 'crosshair';
     } else {
         document.body.style.cursor = 'default';
@@ -122,7 +127,7 @@ function onPointerDown(event) {
         params.target.copy(intersects[0].point);
 
         // Move Marker
-        targetMarker.position.set(intersects[0].point.x, 0.12, intersects[0].point.z);
+        targetMarker.position.set(intersects[0].point.x, 120, intersects[0].point.z);
         targetMarker.visible = true;
     }
 }
@@ -143,55 +148,236 @@ let isProjectileInbound = false;
 
 // Chart Setup
 const ctx = document.getElementById('impactChart').getContext('2d');
-const impactChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-        labels: [],
-        datasets: [{
-            label: 'Impact Energy (J)',
-            data: [],
-            backgroundColor: 'rgba(0, 255, 136, 0.2)',
-            borderColor: 'rgba(0, 255, 136, 1)',
-            borderWidth: 1
-        }]
-    },
-    options: {
-        scales: {
-            y: {
-                beginAtZero: true,
-                grid: { color: 'rgba(255,255,255,0.1)' },
-                ticks: { color: '#ccc' }
+let impactChart = null;
+const impactHistory = []; // Store all impact data
+let currentChartType = 'energy';
+
+// Initialize Chart
+function initChart() {
+    if (impactChart) impactChart.destroy();
+
+    const selector = document.getElementById('chart-selector');
+    if (selector) currentChartType = selector.value;
+
+    // Toggle Button Visibility
+    const toggleBtn = document.getElementById('btn-toggle-curve');
+    if (toggleBtn) {
+        toggleBtn.style.display = (currentChartType === 'energy') ? 'none' : 'inline-block';
+    }
+
+    let config = {};
+
+    // Unit: All distance/size in km for display
+    if (currentChartType === 'energy') {
+        const recentHistory = impactHistory.slice(-5);
+        config = {
+            type: 'bar',
+            data: {
+                labels: recentHistory.map(d => `Impact ${d.id}`),
+                datasets: [{
+                    label: 'Impact Energy (J)',
+                    data: recentHistory.map(d => d.energy),
+                    backgroundColor: 'rgba(0, 255, 136, 0.2)',
+                    borderColor: 'rgba(0, 255, 136, 1)',
+                    borderWidth: 1
+                }]
             },
-            x: {
-                ticks: { color: '#ccc' }
+            options: {
+                scales: {
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#ccc' }, title: { display: true, text: 'Energy (J)', color: '#ccc' } },
+                    x: { ticks: { color: '#ccc' } }
+                },
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: 'white' } } }
             }
-        },
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { labels: { color: 'white' } }
+        };
+    } else if (currentChartType === 'crater-dia') {
+        const historyData = impactHistory.map(d => ({ x: d.mass, y: d.craterDiameter / 1000 })); // m -> km
+
+        config = {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: 'Mass (kg) vs Crater Dia (km)',
+                    data: historyData,
+                    backgroundColor: 'rgba(255, 99, 132, 1)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                }]
+            },
+            options: {
+                scales: {
+                    x: {
+                        type: 'linear', // Use Linear scale for Mass to show Power Law curve shape
+                        position: 'bottom',
+                        title: { display: true, text: 'Mass (kg)', color: '#ccc' },
+                        ticks: {
+                            color: '#ccc',
+                            callback: function (value, index, values) {
+                                // Exponential notation for ticks
+                                return Number(value).toExponential();
+                            }
+                        },
+                        grid: { color: 'rgba(255,255,255,0.1)' }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Crater Diameter (km)', color: '#ccc' },
+                        ticks: { color: '#ccc' },
+                        grid: { color: 'rgba(255,255,255,0.1)' }
+                    }
+                },
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: 'white' } } }
+            }
+        };
+    } else if (currentChartType === 'vel-dia') {
+        const historyData = impactHistory.map(d => ({ x: d.velocity, y: d.craterDiameter / 1000 })); // m -> km, v is already km/s in history
+
+        config = {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: 'Velocity (km/s) vs Crater Dia (km)',
+                    data: historyData,
+                    backgroundColor: 'rgba(54, 162, 235, 1)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                }]
+            },
+            options: {
+                scales: {
+                    x: { type: 'linear', position: 'bottom', title: { display: true, text: 'Velocity (km/s)', color: '#ccc' }, ticks: { color: '#ccc' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                    y: { beginAtZero: true, title: { display: true, text: 'Crater Diameter (km)', color: '#ccc' }, ticks: { color: '#ccc' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                },
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: 'white' } } }
+            }
+        };
+    }
+
+    impactChart = new Chart(ctx, config);
+
+    // Auto-update Curve if applicable
+    updateCurve();
+}
+
+function updateCurve() {
+    if (!impactChart || currentChartType === 'energy') return;
+
+    // Check toggle state
+    if (!isCurveVisible) {
+        // Remove if exists
+        const existingIndex = impactChart.data.datasets.findIndex(d => d.label === 'Theoretical Curve');
+        if (existingIndex !== -1) {
+            impactChart.data.datasets.splice(existingIndex, 1);
+            impactChart.update();
+        }
+        return;
+    }
+
+    // Theoretical Power Law Curve
+    // Formula: D(m) = 0.158 * M^0.26 * V(m/s)^0.44 * AngleFactor
+    // Result D must be converted to km for graph.
+
+    const curvePoints = [];
+    const angleRad = params.angle * (Math.PI / 180);
+    const angleFactor = Math.pow(Math.sin(angleRad), 1 / 3);
+
+    if (currentChartType === 'crater-dia') {
+        // Plotting Mass (X) vs Diameter (Y, km)
+        // Var: Mass 1e8 to 1e15
+        // Const: Velocity (Current layout val in km/s)
+        const v_ms = params.velocity * 1000;
+
+        for (let exp = 8; exp <= 15; exp += 0.1) {
+            const m = Math.pow(10, exp);
+            const d_m = 0.158 * Math.pow(m, 0.26) * Math.pow(v_ms, 0.44) * angleFactor;
+            curvePoints.push({ x: m, y: d_m / 1000 }); // Display in km
+        }
+    } else if (currentChartType === 'vel-dia') {
+        // Plotting Velocity (X, km/s) vs Diameter (Y, km)
+        // Var: Velocity 10 to 50 (km/s)
+        // Const: Mass (Current slider)
+        const m = params.mass;
+
+        for (let v_km = 10; v_km <= 50; v_km += 1) {
+            const v_ms = v_km * 1000;
+            const d_m = 0.158 * Math.pow(m, 0.26) * Math.pow(v_ms, 0.44) * angleFactor;
+            curvePoints.push({ x: v_km, y: d_m / 1000 }); // Display in km
         }
     }
-});
+
+    // Add Curve Dataset
+    const existingIndex = impactChart.data.datasets.findIndex(d => d.label === 'Theoretical Curve');
+    if (existingIndex !== -1) {
+        impactChart.data.datasets.splice(existingIndex, 1);
+    }
+
+    impactChart.data.datasets.push({
+        label: 'Theoretical Curve',
+        data: curvePoints,
+        type: 'line',
+        borderColor: 'rgba(255, 255, 255, 0.8)',
+        borderWidth: 2,
+        borderDash: [5, 5],
+        pointRadius: 0,
+        fill: false,
+        tension: 0.4
+    });
+
+    impactChart.update();
+}
+
+// Initial load
+initChart();
+
+// Listener for dropdown
+const chartSelector = document.getElementById('chart-selector');
+if (chartSelector) {
+    chartSelector.addEventListener('change', () => initChart()); // Reset chart on change
+}
+
+// Toggle Curve Logic
+let isCurveVisible = false;
+const toggleBtn = document.getElementById('btn-toggle-curve');
+
+if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+        isCurveVisible = !isCurveVisible;
+
+        // Update Button Text
+        toggleBtn.innerText = isCurveVisible ? "HIDE CURVE" : "SHOW CURVE";
+
+        // Update Graph
+        updateCurve();
+    });
+}
 
 let impactCount = 0;
 
-function updateStats(energy, diameter, depth) {
+function updateStats(energy, diameter, depth, mass, projectileDiameter) {
     uiEnergy.innerText = energy.toExponential(2);
-    uiDiameter.innerText = diameter.toFixed(2);
-    uiDepth.innerText = depth.toFixed(2);
+    // UI Display: Convert from meters to km
+    const dia_km = diameter / 1000;
+    const dep_km = depth / 1000;
 
-    // Update Chart
+    uiDiameter.innerText = dia_km.toFixed(2) + " km";
+    uiDepth.innerText = dep_km.toFixed(2) + " km";
+
+    // Update History
     impactCount++;
-    impactChart.data.labels.push(`Impact ${impactCount}`);
-    impactChart.data.datasets[0].data.push(energy);
+    impactHistory.push({
+        id: impactCount,
+        energy: energy,
+        mass: mass,
+        velocity: params.velocity, // Storing km/s for easy graphing
+        craterDiameter: diameter, // Store meters internally for consistency? No, lets store raw meters
+        projectileDiameter: projectileDiameter
+    });
 
-    // Keep chart clean (last 5 impacts)
-    if (impactChart.data.labels.length > 5) {
-        impactChart.data.labels.shift();
-        impactChart.data.datasets[0].data.shift();
-    }
-
-    impactChart.update();
+    // Efficiency: If we just added a point, we can push to chart.
+    // But since we support switching, re-rendering or updating is needed.
+    // Let's just call initChart() to refresh the view with new data.
+    initChart();
 }
 
 // --- Logic ---
@@ -200,7 +386,7 @@ function fireProjectile() {
 
     // Physics Constants
     const g = 1.62;
-    const v = params.velocity;
+    const v = params.velocity * 1000; // Convert km/s to m/s for physics
     const angleRad = params.angle * (Math.PI / 180);
 
     // Impact Velocity Components (Desired at ground level)
@@ -211,10 +397,10 @@ function fireProjectile() {
     const h_max = (vY_impact * vY_impact) / (2 * g);
 
     // 2. Determine Spawn Height
-    // Target 300m for visual effect, but clamp to physical limit
-    let spawnHeight = 300;
+    // Target 50,000m (50km) for visuals
+    let spawnHeight = 50000;
     if (spawnHeight > h_max) {
-        spawnHeight = h_max - 0.5; // Slightly below peak
+        spawnHeight = h_max - 500; // Slightly below peak
     }
 
     // 3. Calculate Vertical Launch Velocity (at Spawn Height)
@@ -242,8 +428,11 @@ function fireProjectile() {
 
     // Safety Check
     if (isNaN(launchPos.x) || isNaN(launchPos.y) || isNaN(time)) {
-        console.error("Launch param NaN", { h_max, time, dist });
-        return;
+        console.warn("Launch param physics check failed, clamping.", { h_max, time, dist });
+        // Fallback for visual:
+        if (isNaN(time)) {
+            time = 10;
+        }
     }
 
     // Start Countdown
@@ -277,17 +466,39 @@ function handleImpact(projectile, event) {
     // 1. Calculate Kinetic Energy: E = 0.5 * m * v^2
     const energy = 0.5 * mass * velocity * velocity;
 
-    // 2. Simple Scaling Law for Crater Diameter
-    // Boosted scalar from 0.1 to 0.25 for better visibility of small impacts
-    const diameter = 0.25 * Math.pow(energy, 0.33);
+    // 2. Reference Scaling Law (From provided code)
+    // Formula from 'java code.txt': D(km) = 1.58E-4 * M^0.26 * V(km/s * 1000)^0.44
+    // Converted to Meters: D(m) = 0.158 * M^0.26 * V(m/s)^0.44
+
+    // Physics Note: The exponent 0.26 (approx 1/3.8) is characteristic of the 
+    // Holsapple-Schmidt Gravity Regime for non-porous targets.
+    // This implicitly handles the "large crater" scaling.
+
+    let diameter = 0.158 * Math.pow(mass, 0.26) * Math.pow(velocity, 0.44);
+
+    // Apply Angle Correction (Standard Efficiency)
+    // Reference likely assumes max efficiency or a specific angle. 
+    // We apply standard sin(theta)^(1/3) scaling to make angle meaningful.
+    const angleRad = params.angle * (Math.PI / 180);
+    const angleFactor = Math.pow(Math.sin(angleRad), 1 / 3);
+
+    diameter *= angleFactor;
+
+    // Log for verification
+    console.log("Physics Audit (Reference Formula):", {
+        mass, velocity, angle: params.angle,
+        baseDiameter: diameter / angleFactor,
+        finalDiameter: diameter
+    });
 
     // Visuals
     const impactPos = projectile.mesh.position.clone();
-
     moon.addCrater(impactPos, diameter / 2); // Radius
 
     // Explosion Effect
-    explosionSystem.trigger(impactPos, 50 + Math.floor(energy / 1000));
+    // Cap particles to prevent crash at high energy (e.g. 1e16 J)
+    const particleCount = Math.min(500, 50 + Math.floor(energy / 1000));
+    explosionSystem.trigger(impactPos, particleCount);
 
     // Play Sound
     soundManager.playExplosion();
@@ -303,8 +514,27 @@ function handleImpact(projectile, event) {
     }
 
     // Update UI
-    const depth = diameter * 0.2;
-    updateStats(energy, diameter, depth);
+    // DEPTH CALCULATION (Pike 1977)
+    // Simple Craters (< 15 km): d = 0.2 * D
+    // Complex Craters (> 15 km): d = 1.04 * D^0.301 (Dimensions in km)
+
+    let depth;
+    if (diameter <= 15000) {
+        depth = diameter * 0.2;
+    } else {
+        const D_km = diameter / 1000;
+        const d_km = 1.04 * Math.pow(D_km, 0.301);
+        depth = d_km * 1000;
+    }
+
+    // Calculate projectile real diameter (2 * radius)
+    // Note: projectile.radius is the physical radius, projectile.visRadius is clamped visuals
+    const projDia = projectile.radius * 2;
+
+    // SCALING VISUAL FIX:
+    // If the crater is huge (km size), the visual lines need to be huge too.
+
+    updateStats(energy, diameter, depth, mass, projDia);
 
     // Create HUD Label
     createLabel(impactPos, diameter, depth);
@@ -323,9 +553,14 @@ function createLabel(position, diameter, depth) {
     div.style.borderRadius = '4px';
     div.style.fontFamily = 'monospace';
     div.style.fontSize = '12px';
+
+    // Display in KM
+    const dia_km = diameter / 1000;
+    const dep_km = depth / 1000;
+
     div.innerHTML = `
-        Dia: ${diameter.toFixed(2)} m<br>
-        Dep: ${depth.toFixed(2)} m
+        Dia: ${dia_km.toFixed(2)} km<br>
+        Dep: ${dep_km.toFixed(2)} km
     `;
 
     const label = new CSS2DObject(div);
@@ -335,19 +570,11 @@ function createLabel(position, diameter, depth) {
 
     // Ghosted Gauge
     // 1. Diameter Ring
-    const ringGeo = new THREE.RingGeometry(diameter / 2 - 0.1, diameter / 2, 32);
+    const ringGeo = new THREE.RingGeometry(diameter / 2 - (diameter * 0.05), diameter / 2, 64);
     ringGeo.rotateX(-Math.PI / 2);
-    ringGeo.translate(0, 0.05, 0);
-
-    const ringMat = new THREE.MeshBasicMaterial({
-        color: 0x00ff00,
-        transparent: true,
-        opacity: 0.3,
-        side: THREE.DoubleSide
-    });
-    const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-    ringMesh.position.copy(position);
-    scene.add(ringMesh);
+    // Lift scaling with diameter
+    const lift = Math.max(50, diameter * 0.05);
+    ringGeo.translate(0, lift, 0);
 
     // 2. Depth Line
     const points = [];
@@ -357,7 +584,8 @@ function createLabel(position, diameter, depth) {
     const lineMat = new THREE.LineBasicMaterial({
         color: 0x00ff00,
         transparent: true,
-        opacity: 0.5
+        opacity: 0.5,
+        linewidth: 2
     });
     const line = new THREE.Line(lineGeo, lineMat);
     line.position.copy(position);
@@ -365,10 +593,10 @@ function createLabel(position, diameter, depth) {
 
     // 3. Crosshairs
     const crossPoints = [];
-    crossPoints.push(new THREE.Vector3(-diameter / 2, 0.05, 0));
-    crossPoints.push(new THREE.Vector3(diameter / 2, 0.05, 0));
-    crossPoints.push(new THREE.Vector3(0, 0.05, -diameter / 2));
-    crossPoints.push(new THREE.Vector3(0, 0.05, diameter / 2));
+    crossPoints.push(new THREE.Vector3(-diameter / 2, lift, 0));
+    crossPoints.push(new THREE.Vector3(diameter / 2, lift, 0));
+    crossPoints.push(new THREE.Vector3(0, lift, -diameter / 2));
+    crossPoints.push(new THREE.Vector3(0, lift, diameter / 2));
     const crossGeo = new THREE.BufferGeometry().setFromPoints(crossPoints);
     const crossLines = new THREE.LineSegments(crossGeo, lineMat);
     crossLines.position.copy(position);
@@ -385,19 +613,48 @@ function setupInput(id, paramKey, displayId, unit = '') {
             const val = Number(e.target.value);
             params[paramKey] = val;
             display.innerText = val + unit;
+            updateCurve(); // Real-time curve update
         });
     }
 }
 
-setupInput('inp-velocity', 'velocity', 'val-velocity', ' m/s');
+setupInput('inp-velocity', 'velocity', 'val-velocity', ' km/s');
 setupInput('inp-angle', 'angle', 'val-angle', ' deg');
-setupInput('inp-mass', 'mass', 'val-mass', ' kg');
-setupInput('inp-density', 'density', 'val-density', ' kg/m³');
+
+// Logarithmic Mass Input
+const massInput = document.getElementById('inp-mass');
+const massDisplay = document.getElementById('val-mass');
+if (massInput && massDisplay) {
+    massInput.addEventListener('input', (e) => {
+        const exp = Number(e.target.value); // 3 to 10
+        const val = Math.pow(10, exp);
+        params.mass = val;
+        massDisplay.innerText = val.toExponential(1) + ' kg';
+        updateCurve(); // Real-time curve update
+    });
+}
 
 const fireBtn = document.getElementById('fire-btn');
 if (fireBtn) {
     fireBtn.addEventListener('click', () => {
         fireProjectile();
+    });
+}
+
+const resetBtn = document.getElementById('reset-btn');
+if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+        // Reset Logic
+        // 1. Clear Projectiles
+        for (let p of projectiles) {
+            p.destroy();
+        }
+        projectiles.length = 0;
+
+        // 2. Clear Craters (Reload Page or Clear Mesh?)
+        // Reloading page is simplest but jarring.
+        // Let's reload page for true reset as crater deformation is permanent on mesh.
+        location.reload();
     });
 }
 

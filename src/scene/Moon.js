@@ -23,7 +23,9 @@ export class Moon {
         this.craterTexture = textureLoader.load('./textures/crater.png');
 
         // Visuals
-        const geometry = new THREE.PlaneGeometry(1000, 1000, 256, 256); // Higher segments for displacement later
+        // Planetary Scale: 400km x 400km
+        // Increased resolution to 1024x1024 for better small crater definition
+        const geometry = new THREE.PlaneGeometry(400000, 400000, 1024, 1024);
         const material = new THREE.MeshStandardMaterial({
             map: texture,
             roughness: 0.8,
@@ -36,7 +38,7 @@ export class Moon {
         this.mesh.receiveShadow = true;
         this.scene.add(this.mesh);
 
-        // Physics
+        // Physics (Ground Plane is infinite in Cannon, but let's visually match)
         const shape = new CANNON.Plane();
         this.body = new CANNON.Body({
             mass: 0, // Static
@@ -53,21 +55,46 @@ export class Moon {
         const positions = this.mesh.geometry.attributes.position;
         const v = new THREE.Vector3();
 
-        // Performance: Optimization could be done here, but linear scan is ok for 65k points occasionally.
+        // Performance Optimization: 1024x1024 is 1M vertices.
+        // Use bounding box check to skip distant vertices.
+        const limit = radius * 1.4; // Slightly larger than rim (1.3)
+
         for (let i = 0; i < positions.count; i++) {
+            const x = positions.getX(i);
+            const y = positions.getY(i);
+
+            // Fast Bounding Box Check relating to local crater center
+            if (Math.abs(x - localPos.x) > limit || Math.abs(y - localPos.y) > limit) continue;
+
             v.fromBufferAttribute(positions, i);
 
-            const dist = Math.sqrt((v.x - localPos.x) ** 2 + (v.y - localPos.y) ** 2);
+            const dist = Math.sqrt((x - localPos.x) ** 2 + (y - localPos.y) ** 2);
 
             if (dist < radius) {
                 // Dig down (bowl shape)
+                // Enhanced visual depth for "crater" look (not just dent)
                 const t = dist / radius;
-                const depth = Math.cos(t * Math.PI * 0.5) * (radius * 0.5);
+                const depth = Math.cos(t * Math.PI * 0.5) * (radius * 0.8); // 0.8 depth ratio
                 v.z -= depth;
+
+                // Central Peak for Complex Craters (Diameter > 15km)
+                // Threshold: Radius > 7500m
+                if (radius > 7500) {
+                    const peakRadius = radius * 0.25; // Broad peak
+                    if (dist < peakRadius) {
+                        // Uplift
+                        const tp = dist / peakRadius;
+                        // Boosted Uplift to ensure visibility: 0.4 * Radius
+                        const uplift = (1 - tp) * (radius * 0.4);
+                        v.z += uplift; // UP (Local +Z is World +Y)
+                    }
+                }
+
             } else if (dist < radius * 1.3) {
                 // Rim: Push up
+                // Sharper, higher rim
                 const t = (dist - radius) / (radius * 0.3); // 0 at edge, 1 at outer rim
-                const height = (1 - t) * (radius * 0.15);
+                const height = (1 - t) * (radius * 0.25); // Increased height to 0.25
                 v.z += height;
             }
             // Update
@@ -76,15 +103,5 @@ export class Moon {
 
         positions.needsUpdate = true;
         this.mesh.geometry.computeVertexNormals();
-        // No, if the hole is deep, the decal at y=0 will float in the middle of the air!
-        // Best approach for visuals: Vertex Colors!
-        // We can darken the vertices in the hole.
-
-        // Let's update material to use vertex colors.
-        // this.mesh.material.vertexColors = true; // Need to set this in init
-
-        // For now, let's keep the particle explosion for aesthetics and rely on shadow for depth.
-        // We can skip the 'fake' rim mesh since we made a real rim.
-        // Maybe add some 'boulder' meshes scattered around?
     }
 }
