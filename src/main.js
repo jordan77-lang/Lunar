@@ -110,7 +110,7 @@ scene.add(starMesh);
 // --- Earth Background ---
 // Create a massive procedural Earth in the deep background
 const earthGroup = new THREE.Group();
-const earthRadius = 25000; // Shrunk so it looks further away
+const earthRadius = 37500; // Increased 50% as requested (was 25000)
 const earthDist = 600000; // Pushed further into the background
 
 // Earth Sphere
