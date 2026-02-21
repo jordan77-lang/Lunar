@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import * as CANNON from 'cannon-es';
 import Chart from 'chart.js/auto';
@@ -14,7 +17,7 @@ const soundManager = new SoundManager();
 
 // --- Scene Setup ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050505);
+scene.background = new THREE.Color(0x000000); // Stark black space
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 100, 2000000); // Near/Far planes increased
 camera.position.set(0, 50000, 100000); // 100km out
@@ -22,8 +25,12 @@ camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+// Clamping pixel ratio to max 2 prevents the post-processing Bloom from tanking 4K/5K displays
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadow edges
+renderer.toneMapping = THREE.ACESFilmicToneMapping; // Photographic exposure handling
+renderer.toneMappingExposure = 1.2; // Slightly boosted exposure
 document.querySelector('#app').appendChild(renderer.domElement);
 
 const labelRenderer = new CSS2DRenderer();
@@ -37,22 +44,100 @@ document.body.appendChild(labelRenderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
+controls.maxPolarAngle = Math.PI / 2.0; // Lock perfectly to the horizon line
+controls.minDistance = 2000;
+controls.maxDistance = 1500000; // Allow zooming way out to see the massive new plane
 
 // --- Lights ---
-const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.02); // Pitch black shadows with tiny ambient
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-dirLight.position.set(50000, 100000, 50000);
+const dirLight = new THREE.DirectionalLight(0xffffff, 2.5); // Stark white sunlight, very intense
+dirLight.position.set(100000, 25000, 100000); // Very low sun angle (25km up) for long drastic shadows
 dirLight.castShadow = true;
-dirLight.shadow.camera.top = 200000;
-dirLight.shadow.camera.bottom = -200000;
-dirLight.shadow.camera.left = -200000;
-dirLight.shadow.camera.right = 200000;
+// Optimize shadow map bounds and resolution to save VRAM
+const shadowSize = 150000;
+dirLight.shadow.camera.top = shadowSize;
+dirLight.shadow.camera.bottom = -shadowSize;
+dirLight.shadow.camera.left = -shadowSize;
+dirLight.shadow.camera.right = shadowSize;
 dirLight.shadow.bias = -0.0001;
-dirLight.shadow.mapSize.width = 4096;
-dirLight.shadow.mapSize.height = 4096;
+// Dropped from 4096 to safely save 75% shadow VRAM
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
 scene.add(dirLight);
+
+// Impact Flash Light
+const impactLight = new THREE.PointLight(0xffffff, 0, 50000);
+scene.add(impactLight);
+
+// --- Post Processing ---
+const renderScene = new RenderPass(scene, camera);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+bloomPass.threshold = 0.8; // Only bloom very bright objects (ejecta and stars), prevent pure whiteouts
+bloomPass.strength = 0.6; // Lowered from 1.2
+bloomPass.radius = 0.5;
+
+const composer = new EffectComposer(renderer);
+composer.addPass(renderScene);
+composer.addPass(bloomPass);
+
+// --- Starfield ---
+const starsGeometry = new THREE.BufferGeometry();
+const starsCount = 5000;
+const posArray = new Float32Array(starsCount * 3);
+const maxDist = 1000000;
+for (let i = 0; i < starsCount; i++) {
+    // Generate stars extending slightly below the horizon (down to ~-11 degrees)
+    const r = maxDist * (0.8 + Math.random() * 0.2); // Keep them far away
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * (Math.PI / 2 + 0.2); // 0 to ~101 degrees (extends below equator)
+
+    posArray[i * 3] = r * Math.sin(phi) * Math.cos(theta);     // x
+    posArray[i * 3 + 1] = r * Math.cos(phi);                   // y
+    posArray[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta); // z
+}
+starsGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+const starsMaterial = new THREE.PointsMaterial({
+    size: 500,
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.8
+});
+const starMesh = new THREE.Points(starsGeometry, starsMaterial);
+scene.add(starMesh);
+
+// --- Earth Background ---
+// Create a massive procedural Earth in the deep background
+const earthGroup = new THREE.Group();
+const earthRadius = 25000; // Shrunk so it looks further away
+const earthDist = 600000; // Pushed further into the background
+
+// Earth Sphere
+const earthGeo = new THREE.SphereGeometry(earthRadius, 64, 64);
+
+// Procedural Shader Material for Earth (Oceans + Atmosphere + Continents)
+// Replaced with actual NASA texture based on user feedback
+const textureLoader = new THREE.TextureLoader();
+const earthTexture = textureLoader.load('./earth.jpg');
+
+const earthMat = new THREE.MeshLambertMaterial({
+    map: earthTexture,
+    emissive: new THREE.Color(0x112233), // slight blue atmospheric glow in shadow
+    emissiveIntensity: 0.2
+});
+
+const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+earthGroup.add(earthMesh);
+
+// Position Earth: High up in the sky, far away
+// Y is up, -Z is into the screen.
+earthGroup.position.set(-earthDist * 0.3, earthDist * 0.4, -earthDist * 0.9);
+// Rotate so it looks nice (North America / Pacific visible)
+earthGroup.rotation.z = 0.4;
+earthGroup.rotation.y = -1.0;
+earthGroup.rotation.x = 0.2;
+scene.add(earthGroup);
 
 // --- Physics World ---
 const world = new CANNON.World();
@@ -108,8 +193,10 @@ function onPointerMove(event) {
     if (intersects.length > 0) {
         const point = intersects[0].point;
         reticule.position.set(point.x, 100, point.z); // Lift reticule slightly
+        reticule.visible = true;
         document.body.style.cursor = 'crosshair';
     } else {
+        reticule.visible = false;
         document.body.style.cursor = 'default';
     }
 }
@@ -295,11 +382,11 @@ function updateCurve() {
         }
     } else if (currentChartType === 'vel-dia') {
         // Plotting Velocity (X, km/s) vs Diameter (Y, km)
-        // Var: Velocity 10 to 50 (km/s)
+        // Var: Velocity 5 to 80 (km/s)
         // Const: Mass (Current slider)
         const m = params.mass;
 
-        for (let v_km = 10; v_km <= 50; v_km += 1) {
+        for (let v_km = 5; v_km <= 80; v_km += 1) {
             const v_ms = v_km * 1000;
             const d_m = 0.158 * Math.pow(m, 0.26) * Math.pow(v_ms, 0.44) * angleFactor;
             curvePoints.push({ x: v_km, y: d_m / 1000 }); // Display in km
@@ -360,8 +447,25 @@ function updateStats(energy, diameter, depth, mass, projectileDiameter) {
     const dia_km = diameter / 1000;
     const dep_km = depth / 1000;
 
-    uiDiameter.innerText = dia_km.toFixed(2) + " km";
-    uiDepth.innerText = dep_km.toFixed(2) + " km";
+    uiDiameter.innerText = dia_km.toFixed(2);
+    uiDepth.innerText = dep_km.toFixed(2);
+
+    // Morphology Display
+    const uiShape = document.getElementById('crater-shape');
+    let isComplex = false;
+    if (uiShape) {
+        if (diameter <= 15000) {
+            uiShape.innerText = "Simple (Bowl-Shaped)";
+            uiShape.style.color = "#00ff88";
+            isComplex = false;
+        } else {
+            uiShape.innerText = "Complex (Central Peak)";
+            uiShape.style.color = "#ffb86c";
+            isComplex = true;
+        }
+    }
+
+    drawCraterProfile(isComplex);
 
     // Update History
     impactCount++;
@@ -493,7 +597,24 @@ function handleImpact(projectile, event) {
 
     // Visuals
     const impactPos = projectile.mesh.position.clone();
-    moon.addCrater(impactPos, diameter / 2); // Radius
+    moon.addCrater(impactPos, diameter / 2, params.angle); // Pass radius and impact angle
+
+    // Impact Flash
+    impactLight.position.copy(impactPos);
+    impactLight.position.y += 1000; // slightly above
+    let flashIntensity = Math.min(10, 2 + Math.floor(energy / 1e14));
+    impactLight.intensity = flashIntensity;
+
+    // Fade out light over time
+    const fadeLight = () => {
+        if (impactLight.intensity > 0.1) {
+            impactLight.intensity -= flashIntensity * 0.05;
+            requestAnimationFrame(fadeLight);
+        } else {
+            impactLight.intensity = 0;
+        }
+    };
+    fadeLight();
 
     // Explosion Effect
     // Cap particles to prevent crash at high energy (e.g. 1e16 J)
@@ -545,27 +666,22 @@ function handleImpact(projectile, event) {
 
 function createLabel(position, diameter, depth) {
     const div = document.createElement('div');
-    div.className = 'label';
-    div.style.backgroundColor = 'rgba(0, 0, 0, 0.6)';
-    div.style.color = '#00ff00';
-    div.style.padding = '5px';
-    div.style.border = '1px solid #00ff00';
-    div.style.borderRadius = '4px';
-    div.style.fontFamily = 'monospace';
-    div.style.fontSize = '12px';
+    div.className = 'impact-marker';
 
     // Display in KM
     const dia_km = diameter / 1000;
     const dep_km = depth / 1000;
 
-    div.innerHTML = `
-        Dia: ${dia_km.toFixed(2)} km<br>
-        Dep: ${dep_km.toFixed(2)} km
-    `;
+    div.innerHTML = `<span class="marker-id">IMPACT ${impactCount}</span><br>Ø ${dia_km.toFixed(1)} km<br>↓ ${dep_km.toFixed(1)} km`;
+
+    // Click to Fly Camera
+    div.onclick = () => {
+        flyToCrater(position, diameter);
+    };
 
     const label = new CSS2DObject(div);
     label.position.copy(position);
-    label.position.y += 2; // Float above crater
+    label.position.y += Math.max(100, diameter * 0.1); // Float above crater smartly
     scene.add(label);
 
     // Ghosted Gauge
@@ -634,6 +750,13 @@ if (massInput && massDisplay) {
     });
 }
 
+const densitySelect = document.getElementById('inp-density');
+if (densitySelect) {
+    densitySelect.addEventListener('change', (e) => {
+        params.density = Number(e.target.value);
+    });
+}
+
 const fireBtn = document.getElementById('fire-btn');
 if (fireBtn) {
     fireBtn.addEventListener('click', () => {
@@ -656,6 +779,99 @@ if (resetBtn) {
         // Let's reload page for true reset as crater deformation is permanent on mesh.
         location.reload();
     });
+}
+
+// --- Morphology Canvas ---
+function drawCraterProfile(isComplex) {
+    const canvas = document.getElementById('craterProfile');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Draw ground line (faint)
+    ctx.strokeStyle = "rgba(100, 200, 255, 0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, h / 4);
+    ctx.lineTo(w, h / 4);
+    ctx.stroke();
+
+    // Draw Crater Profile Curve
+    ctx.strokeStyle = isComplex ? "#ffb86c" : "#00ff88"; // Match text color
+    ctx.shadowColor = ctx.strokeStyle;
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    const cw = w * 0.8; // Crater width
+    const startX = (w - cw) / 2;
+    const endX = startX + cw;
+    const groundY = h / 4;
+    const rimY = h / 4 - 10;
+    const bottomY = h - 15;
+
+    ctx.moveTo(0, groundY);
+    ctx.lineTo(startX - 20, groundY); // Flat ground left
+    // Rim up
+    ctx.lineTo(startX, rimY);
+
+    if (isComplex) {
+        // Complex profile: terraced walls, central peak
+        ctx.bezierCurveTo(startX + cw * 0.2, bottomY, startX + cw * 0.4, bottomY, w / 2, bottomY - 30); // Left wall to center peak
+        ctx.bezierCurveTo(endX - cw * 0.4, bottomY, endX - cw * 0.2, bottomY, endX, rimY); // Center peak to right wall
+    } else {
+        // Simple profile: smooth bowl
+        ctx.bezierCurveTo(startX + cw * 0.1, bottomY + 20, endX - cw * 0.1, bottomY + 20, endX, rimY);
+    }
+
+    // Rim down
+    ctx.lineTo(endX + 20, groundY);
+    ctx.lineTo(w, groundY); // Flat ground right
+
+    ctx.stroke();
+
+    // Draw Fill (Visual weight)
+    ctx.lineTo(w, h); // Down
+    ctx.lineTo(0, h); // Left
+    ctx.closePath();
+    ctx.fillStyle = isComplex ? "rgba(255, 184, 108, 0.15)" : "rgba(0, 255, 136, 0.15)";
+    ctx.fill();
+
+    // Reset shadow
+    ctx.shadowBlur = 0;
+}
+
+// --- Cinematic Camera Flight ---
+function flyToCrater(targetPos, diameter) {
+    const startCamPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+
+    // Calculate a good viewing distance based on crater size (min 2km away)
+    const viewDist = Math.max(2000, diameter * 2.0);
+    // Position camera diagonally up and back from the crater
+    const camOffset = new THREE.Vector3(targetPos.x, targetPos.y + viewDist * 0.6, targetPos.z + viewDist);
+
+    let frame = 0;
+    const duration = 60; // 1 second at 60fps
+
+    function animateFlight() {
+        frame++;
+        const t = frame / duration;
+        // Ease Out Cubic: fast start, slow finish
+        const ease = 1 - Math.pow(1 - t, 3);
+
+        camera.position.lerpVectors(startCamPos, camOffset, ease);
+        controls.target.lerpVectors(startTarget, targetPos, ease);
+        controls.update();
+
+        if (frame < duration) {
+            requestAnimationFrame(animateFlight);
+        }
+    }
+    animateFlight();
 }
 
 // --- Loop ---
@@ -695,7 +911,14 @@ function render() {
         }
     }
 
-    renderer.render(scene, camera);
+    // Scale reticules dynamically based on camera distance 
+    const distTarget = camera.position.distanceTo(reticule.position);
+    // Base scale 1 at 50,000m. Allow it to shrink down to 0.1 when very close.
+    const scaleFactor = Math.max(0.1, distTarget / 50000);
+    reticule.scale.set(scaleFactor, 1, scaleFactor);
+    targetMarker.scale.set(scaleFactor, 1, scaleFactor);
+
+    composer.render();
     labelRenderer.render(scene, camera);
 }
 

@@ -21,10 +21,51 @@
 
   <div id="ui-container">
     <h1>LUNAR IMPACT</h1>
-    <div class="stat-box">
-      <p>ENERGY <span id="energy" class="stat-value">0</span></p>
-      <p>DIAMETER <span id="diameter" class="stat-value">0</span></p>
-      <p>DEPTH <span id="depth" class="stat-value">0</span></p>
+    <div class="impact-dashboard">
+      <div class="dash-row top-row">
+        <div class="dash-item highlight">
+          <div class="dash-label">Impact Energy</div>
+          <div class="dash-value highlight-val"><span id="energy">0</span> <span class="unit">Joules</span></div>
+        </div>
+      </div>
+      <div class="dash-row">
+        <div class="dash-item">
+          <svg class="dash-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M2 12h20M6 8l-4 4 4 4M18 8l4 4-4 4" />
+          </svg>
+          <div class="dash-text">
+            <div class="dash-label">Diameter</div>
+            <div class="dash-value"><span id="diameter">0</span> <span class="unit">km</span></div>
+          </div>
+        </div>
+        <div class="dash-item">
+          <svg class="dash-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 4v16M8 16l4 4 4-4" />
+          </svg>
+          <div class="dash-text">
+            <div class="dash-label">Depth</div>
+            <div class="dash-value"><span id="depth">0</span> <span class="unit">km</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="dash-row shape-row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+        <div class="dash-item shape-item" style="border:none; padding-bottom: 0;">
+          <svg class="dash-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+          </svg>
+          <div class="dash-text">
+            <div class="dash-label">Crater Morphology</div>
+            <div class="dash-value" id="crater-shape">Waiting...</div>
+          </div>
+        </div>
+        <div style="padding: 0 15px 15px 15px; width: 100%; box-sizing: border-box;">
+          <canvas id="craterProfile" width="300" height="80"
+            style="width: 100%; background: rgba(0,0,0,0.5); border-radius: 4px; border: 1px solid rgba(0, 255, 136, 0.2);"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="controls-info">
+      <p>Controls: Drag to rotate | Scroll to zoom | Right-click to pan</p>
     </div>
     <div style="margin-bottom: 5px; text-align: center; pointer-events: auto;">
       <select id="chart-selector"
@@ -37,19 +78,26 @@
         style="background: #444; color: white; border: 1px solid #666; padding: 2px 6px; border-radius: 4px; font-size: 11px; cursor: pointer; margin-left: 5px;">SHOW
         CURVE</button>
     </div>
-    <div id="chart-container" style="width: 400px; height: 250px;">
+    <div id="chart-container" style="max-width: 400px; width: 100%; height: 250px;">
       <canvas id="impactChart"></canvas>
     </div>
   </div>
 
   <div id="ui-controls">
     <div class="control-group">
+      <label>Type</label>
+      <select id="inp-density" class="select-css">
+        <option value="1000">Ice/Comet (~1000 kg/m³)</option>
+        <option value="3000" selected>Rock/Asteroid (~3000 kg/m³)</option>
+        <option value="8000">Iron (~8000 kg/m³)</option>
+      </select>
+    </div>
+    <div class="control-group">
       <label>Velocity <span id="val-velocity" class="value-display">10 km/s</span></label>
-      <input type="range" id="inp-velocity" min="10" max="50" value="10" step="1">
+      <input type="range" id="inp-velocity" min="5" max="80" value="10" step="1">
     </div>
     <div class="control-group">
       <label>Mass (Exp) <span id="val-mass" class="value-display">1e8 kg</span></label>
-      <!-- Logarithmic slider implementation via JS mapping -->
       <input type="range" id="inp-mass" min="8" max="15" value="8" step="0.1">
     </div>
     <div class="control-group">
@@ -57,7 +105,7 @@
       <input type="range" id="inp-angle" min="5" max="90" value="90">
     </div>
     <button id="fire-btn">FIRE PROJECTILE</button>
-    <button id="reset-btn" style="margin-top: 10px; background: #555;">RESET SIMULATION</button>
+    <button id="reset-btn">RESET SIMULATION</button>
   </div>
 
   <script type="module" src="/src/main.js"></script>

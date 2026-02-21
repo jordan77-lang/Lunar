@@ -12,25 +12,26 @@ export class Projectile {
         // Parameters
         // Ensure mass/density are numbers
         mass = Number(mass) || 1000;
-        density = Number(density) || 3000;
+        this.density = Number(density) || 3000;
 
-        this.radius = Math.pow((3 * mass) / (4 * Math.PI * density), 1 / 3); // Calculate radius from mass & density
+        this.radius = Math.pow((3 * mass) / (4 * Math.PI * this.density), 1 / 3); // Calculate radius from mass & density
         // Clamp scale for visualization (Planetary scale: 500m min, 10km max)
         this.visRadius = Math.max(500, Math.min(this.radius * 2, 10000));
     }
 
     init(position, velocity, mass) {
         // Visuals
-        const geometry = new THREE.SphereGeometry(this.visRadius, 32, 32);
+        const geometry = new THREE.SphereGeometry(this.visRadius, 64, 64);
         const textureLoader = new THREE.TextureLoader();
         const texture = textureLoader.load('./textures/asteroid.png');
 
         const material = new THREE.MeshStandardMaterial({
             map: texture,
             bumpMap: texture,
-            bumpScale: 0.1,
-            roughness: 0.8,
-            metalness: 0.2
+            bumpScale: 0.2, // increased bump
+            roughness: 0.9,
+            metalness: 0.4, // slightly more metallic
+            color: this.density === 8000 ? 0x888888 : (this.density === 1000 ? 0xcccccc : 0xa0a0a0) // visually differentiate
         });
 
         this.mesh = new THREE.Mesh(geometry, material);
