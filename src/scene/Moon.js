@@ -28,6 +28,7 @@ export class Moon {
 
         // Visuals
         const R = 3500000; // Fake larger radius (real is 1737400)
+        this.R = R; // Store for crater reference
 
         // --- 1. Horizon Mesh (Massive, Low-Res, Faded Edges) ---
         const horizonSize = 2000000;
@@ -81,7 +82,15 @@ export class Moon {
             const x = posAttr.getX(i);
             const y = posAttr.getY(i);
             const dSq = Math.min(x * x + y * y, R * R);
-            posAttr.setZ(i, -(R - Math.sqrt(R * R - dSq)));
+            let z = -(R - Math.sqrt(R * R - dSq));
+
+            // Add subtle terrain noise — rolling hills and micro-craters
+            const noiseScale = 0.00003;
+            const n = noise3D(x * noiseScale, y * noiseScale, 0) * 400
+                + noise3D(x * noiseScale * 4, y * noiseScale * 4, 0.5) * 100;
+            z += n;
+
+            posAttr.setZ(i, z);
         }
         geometry.computeVertexNormals();
 
@@ -130,12 +139,14 @@ export class Moon {
         this.craters.push({ position: position.clone(), radius, angle });
     }
 
+
     _applyDeformationToMesh(config, position, radius, angle = 90) {
         const localPos = config.mesh.worldToLocal(position.clone());
         const positions = config.mesh.geometry.attributes.position;
         const colors = config.mesh.geometry.attributes.color;
         const v = new THREE.Vector3();
         const c = new THREE.Color();
+        const R = this.R; // Reference sphere radius
 
         // Limit for geometry search 
         const limit = radius * 4.0; // Reach much further for ejecta rays
@@ -172,28 +183,44 @@ export class Moon {
 
                     // Deform geometry
                     if (dist < radius) {
-                        // Dig down
                         const depthPerc = 1 - (dist / radius);
-                        // Make simple craters bowl shaped
-                        const depth = radius * 0.2 * depthPerc;
-                        v.z -= depth;
+
+                        // We must ignore the current v.z (which includes noise or other craters)
+                        // and dig relative to the mathematical reference sphere surface at this point.
+                        const dSq = Math.min(x * x + y * y, R * R);
+                        const baseZ = -(R - Math.sqrt(R * R - dSq));
+
+                        // Calculate how deep this point is in the bowl
+                        const bowlDepth = radius * 0.2 * depthPerc;
+
+                        // Start with the base sphere and dig down
+                        let newZ = baseZ - bowlDepth;
 
                         // Complex Craters (> 15km / 15000m diameter -> >7500m radius) have central peaks
                         if (radius > 7500 && dist < radius * 0.2) {
                             // Use smooth half-cosine to make a rounded peak instead of a sharp linear cone
                             const peakDistNorm = dist / (radius * 0.2); // 0 at center, 1 at edge of peak
                             const peakHeight = radius * 0.08; // Peak is 8% of radius high
-                            v.z += Math.cos(peakDistNorm * Math.PI / 2) * peakHeight;
+                            newZ += Math.cos(peakDistNorm * Math.PI / 2) * peakHeight;
                         }
 
-                        // Darken interior
-                        c.setRGB(0.4, 0.4, 0.4);
+                        // If the current terrain is ALREADY lower than our new crater floor,
+                        // leave it alone (e.g., overlapping a deeper, older crater).
+                        // Otherwise, override the terrain with our smooth crater floor.
+                        if (newZ < v.z) {
+                            v.z = newZ;
+                        }
+
+                        // Brighten interior significantly so it's visible even on dark maria
+                        c.setRGB(1.8, 1.8, 1.8);
                         colors.setXYZW(i, c.r, c.g, c.b, colors.getW(i));
 
                     } else if (dist < radius * 1.3) {
                         // Rim: Push up (Smooth Sine curve)
                         const t = (dist - radius) / (radius * 0.3); // 0 at inner rim edge, 1 at outer rim edge
                         const height = Math.cos(t * Math.PI / 2) * (radius * 0.15); // Rounded rim
+
+                        // Only add height to the existing terrain (preserves noise on the rim)
                         v.z += height;
 
                         // Lighten Rim slightly
@@ -260,9 +287,8 @@ export class Moon {
                         const albedoBoost = Math.pow(r_norm, -2.0) * rayMultiplier;
                         const brightness = 1.0 + (albedoBoost * 0.5); // Lowered baseline boost
 
-                        // Clamp brightness to prevent blown-out HDR values
-                        // Lowered from 2.5 to 1.5 to prevent giant glowing whiteouts on massive craters
-                        const finalBrightness = Math.min(1.5, brightness);
+                        // Clamp brightness to prevent HDR blowout but keep rays visible
+                        const finalBrightness = Math.min(2.0, brightness);
 
                         // Get existing color, lighten it
                         c.fromArray(colors.array, i * 4);

@@ -18,6 +18,7 @@ const soundManager = new SoundManager();
 // --- Scene Setup ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000); // Stark black space
+scene.fog = new THREE.FogExp2(0x080808, 0.0000008); // Very subtle horizon haze — terrain only
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 100, 2000000); // Near/Far planes increased
 camera.position.set(0, 50000, 100000); // 100km out
@@ -49,23 +50,26 @@ controls.minDistance = 2000;
 controls.maxDistance = 1500000; // Allow zooming way out to see the massive new plane
 
 // --- Lights ---
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.02); // Pitch black shadows with tiny ambient
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.005); // Near-zero ambient — vacuum has no fill light
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 2.5); // Stark white sunlight, very intense
-dirLight.position.set(100000, 25000, 100000); // Very low sun angle (25km up) for long drastic shadows
+const dirLight = new THREE.DirectionalLight(0xffffff, 3.2); // Intense sunlight — high contrast lunar look
+dirLight.position.set(100000, 25000, 100000); // Very low sun angle for long drastic shadows
 dirLight.castShadow = true;
-// Optimize shadow map bounds and resolution to save VRAM
 const shadowSize = 150000;
 dirLight.shadow.camera.top = shadowSize;
 dirLight.shadow.camera.bottom = -shadowSize;
 dirLight.shadow.camera.left = -shadowSize;
 dirLight.shadow.camera.right = shadowSize;
 dirLight.shadow.bias = -0.0001;
-// Dropped from 4096 to safely save 75% shadow VRAM
 dirLight.shadow.mapSize.width = 2048;
 dirLight.shadow.mapSize.height = 2048;
 scene.add(dirLight);
+
+// Earthshine — faint blue fill from Earth's reflected light
+const earthshineLight = new THREE.DirectionalLight(0x4466aa, 0.05);
+earthshineLight.position.set(-200000, 250000, -500000); // From Earth's direction
+scene.add(earthshineLight);
 
 // Impact Flash Light
 const impactLight = new THREE.PointLight(0xffffff, 0, 50000);
@@ -82,58 +86,95 @@ const composer = new EffectComposer(renderer);
 composer.addPass(renderScene);
 composer.addPass(bloomPass);
 
-// --- Starfield ---
+// --- Starfield (dense, color-varied) ---
 const starsGeometry = new THREE.BufferGeometry();
-const starsCount = 5000;
+const starsCount = 18000;
 const posArray = new Float32Array(starsCount * 3);
+const starColors = new Float32Array(starsCount * 3);
+const starSizes = new Float32Array(starsCount);
 const maxDist = 1000000;
-for (let i = 0; i < starsCount; i++) {
-    // Generate stars extending slightly below the horizon (down to ~-11 degrees)
-    const r = maxDist * (0.8 + Math.random() * 0.2); // Keep them far away
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.random() * (Math.PI / 2 + 0.2); // 0 to ~101 degrees (extends below equator)
 
-    posArray[i * 3] = r * Math.sin(phi) * Math.cos(theta);     // x
-    posArray[i * 3 + 1] = r * Math.cos(phi);                   // y
-    posArray[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta); // z
+// Star color palette: cool blue-white, neutral white, warm orange
+const starPalette = [
+    { r: 0.7, g: 0.8, b: 1.0 },  // Blue-white (O/B stars) 15%
+    { r: 1.0, g: 1.0, b: 1.0 },  // White (A/F stars) 55%
+    { r: 1.0, g: 0.95, b: 0.85 }, // Warm white (G stars) 15%
+    { r: 1.0, g: 0.85, b: 0.6 },  // Orange (K stars) 10%
+    { r: 1.0, g: 0.7, b: 0.5 },   // Deep orange (M stars) 5%
+];
+
+for (let i = 0; i < starsCount; i++) {
+    const r = maxDist * (0.8 + Math.random() * 0.2);
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * (Math.PI / 2 + 0.2);
+
+    posArray[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    posArray[i * 3 + 1] = r * Math.cos(phi);
+    posArray[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+    // Pick color by weighted random
+    const roll = Math.random();
+    let color;
+    if (roll < 0.15) color = starPalette[0];
+    else if (roll < 0.70) color = starPalette[1];
+    else if (roll < 0.85) color = starPalette[2];
+    else if (roll < 0.95) color = starPalette[3];
+    else color = starPalette[4];
+
+    // Add slight random brightness variation
+    const brightness = 0.6 + Math.random() * 0.4;
+    starColors[i * 3] = color.r * brightness;
+    starColors[i * 3 + 1] = color.g * brightness;
+    starColors[i * 3 + 2] = color.b * brightness;
+
+    // Size variation — most small, few bright
+    starSizes[i] = 200 + Math.random() * 600 + (Math.random() > 0.95 ? 800 : 0);
 }
 starsGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+starsGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
 const starsMaterial = new THREE.PointsMaterial({
-    size: 500,
-    color: 0xffffff,
+    size: 400,
+    vertexColors: true,
     transparent: true,
-    opacity: 0.8
+    opacity: 0.9,
+    sizeAttenuation: true,
+    fog: false // Stars must not be affected by horizon fog
 });
 const starMesh = new THREE.Points(starsGeometry, starsMaterial);
 scene.add(starMesh);
 
 // --- Earth Background ---
-// Create a massive procedural Earth in the deep background
 const earthGroup = new THREE.Group();
-const earthRadius = 37500; // Increased 50% as requested (was 25000)
-const earthDist = 600000; // Pushed further into the background
+const earthRadius = 50000; // Larger for visual prominence
+const earthDist = 450000; // Closer for better visibility
 
-// Earth Sphere
 const earthGeo = new THREE.SphereGeometry(earthRadius, 64, 64);
-
-// Procedural Shader Material for Earth (Oceans + Atmosphere + Continents)
-// Replaced with actual NASA texture based on user feedback
 const textureLoader = new THREE.TextureLoader();
 const earthTexture = textureLoader.load('./earth.jpg');
 
-const earthMat = new THREE.MeshLambertMaterial({
+const earthMat = new THREE.MeshPhongMaterial({
     map: earthTexture,
-    emissive: new THREE.Color(0x112233), // slight blue atmospheric glow in shadow
-    emissiveIntensity: 0.2
+    emissive: new THREE.Color(0x112233),
+    emissiveIntensity: 0.15,
+    specular: new THREE.Color(0x333344), // Ocean specular highlights
+    shininess: 15
 });
 
 const earthMesh = new THREE.Mesh(earthGeo, earthMat);
 earthGroup.add(earthMesh);
 
-// Position Earth: High up in the sky, far away
-// Y is up, -Z is into the screen.
+// Atmospheric glow shell
+const atmosGeo = new THREE.SphereGeometry(earthRadius * 1.025, 64, 64);
+const atmosMat = new THREE.MeshBasicMaterial({
+    color: 0x4488ff,
+    transparent: true,
+    opacity: 0.08,
+    side: THREE.BackSide // Render inside-out for glow effect
+});
+const atmosMesh = new THREE.Mesh(atmosGeo, atmosMat);
+earthGroup.add(atmosMesh);
+
 earthGroup.position.set(-earthDist * 0.3, earthDist * 0.4, -earthDist * 0.9);
-// Rotate so it looks nice (North America / Pacific visible)
 earthGroup.rotation.z = 0.4;
 earthGroup.rotation.y = -1.0;
 earthGroup.rotation.x = 0.2;
@@ -163,8 +204,9 @@ const params = {
 // Scale up reticule (1km size)
 const reticuleGeo = new THREE.RingGeometry(1000, 1500, 32);
 reticuleGeo.rotateX(-Math.PI / 2);
-const reticuleMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+const reticuleMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthTest: false });
 const reticule = new THREE.Mesh(reticuleGeo, reticuleMat);
+reticule.renderOrder = 999;
 reticule.position.copy(params.target);
 reticule.position.y = 0.1; // Slightly above ground
 scene.add(reticule);
@@ -173,8 +215,9 @@ scene.add(reticule);
 // --- Persistent Target Marker ---
 const markerGeo = new THREE.RingGeometry(200, 600, 32);
 markerGeo.rotateX(-Math.PI / 2);
-const markerMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 1.0, side: THREE.DoubleSide });
+const markerMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 1.0, side: THREE.DoubleSide, depthTest: false });
 const targetMarker = new THREE.Mesh(markerGeo, markerMat);
+targetMarker.renderOrder = 999;
 targetMarker.visible = false;
 scene.add(targetMarker);
 
@@ -192,7 +235,7 @@ function onPointerMove(event) {
 
     if (intersects.length > 0) {
         const point = intersects[0].point;
-        reticule.position.set(point.x, 100, point.z); // Lift reticule slightly
+        reticule.position.set(point.x, point.y + 10, point.z); // Follow terrain height
         reticule.visible = true;
         document.body.style.cursor = 'crosshair';
     } else {
@@ -214,7 +257,7 @@ function onPointerDown(event) {
         params.target.copy(intersects[0].point);
 
         // Move Marker
-        targetMarker.position.set(intersects[0].point.x, 120, intersects[0].point.z);
+        targetMarker.position.set(intersects[0].point.x, intersects[0].point.y + 20, intersects[0].point.z);
         targetMarker.visible = true;
     }
 }
@@ -443,6 +486,17 @@ let impactCount = 0;
 
 function updateStats(energy, diameter, depth, mass, projectileDiameter) {
     uiEnergy.innerText = energy.toExponential(2);
+    // TNT equivalent (1 megaton TNT ≈ 4.184 × 10^15 J)
+    const uiTnt = document.getElementById('energy-tnt');
+    if (uiTnt) {
+        const megatons = energy / 4.184e15;
+        if (megatons >= 0.001) {
+            uiTnt.innerText = `≈ ${megatons < 1 ? megatons.toFixed(3) : megatons.toFixed(1)} Mt TNT`;
+        } else {
+            const kilotons = megatons * 1000;
+            uiTnt.innerText = `≈ ${kilotons.toFixed(2)} kt TNT`;
+        }
+    }
     // UI Display: Convert from meters to km
     const dia_km = diameter / 1000;
     const dep_km = depth / 1000;
@@ -481,6 +535,9 @@ function updateStats(energy, diameter, depth, mass, projectileDiameter) {
     // Efficiency: If we just added a point, we can push to chart.
     // But since we support switching, re-rendering or updating is needed.
     // Let's just call initChart() to refresh the view with new data.
+    // Hide chart placeholder on first impact
+    const placeholder = document.getElementById('chart-placeholder');
+    if (placeholder) placeholder.classList.add('hidden');
     initChart();
 }
 
@@ -548,6 +605,7 @@ function fireProjectile() {
     if (fireBtn) {
         fireBtn.disabled = true;
         fireBtn.innerText = "INBOUND...";
+        fireBtn.classList.remove('pulsing'); // Stop first-use pulse
     }
 
     // Single Initialization & Push
@@ -599,27 +657,64 @@ function handleImpact(projectile, event) {
     const impactPos = projectile.mesh.position.clone();
     moon.addCrater(impactPos, diameter / 2, params.angle); // Pass radius and impact angle
 
-    // Impact Flash
+    // Impact Flash Light
     impactLight.position.copy(impactPos);
-    impactLight.position.y += 1000; // slightly above
-    let flashIntensity = Math.min(10, 2 + Math.floor(energy / 1e14));
+    impactLight.position.y += 1000;
+    let flashIntensity = Math.min(15, 3 + Math.floor(energy / 1e14));
     impactLight.intensity = flashIntensity;
 
-    // Fade out light over time
-    const fadeLight = () => {
-        if (impactLight.intensity > 0.1) {
-            impactLight.intensity -= flashIntensity * 0.05;
-            requestAnimationFrame(fadeLight);
+    // Impact Flash Sprite (bright visual flash)
+    const flashSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        color: 0xffffcc,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending
+    }));
+    const flashSize = Math.min(diameter * 0.8, 50000);
+    flashSprite.scale.set(flashSize, flashSize, 1);
+    flashSprite.position.copy(impactPos);
+    flashSprite.position.y += 200;
+    scene.add(flashSprite);
+
+    // Fade flash sprite and light
+    let flashLife = 1.0;
+    const fadeFlash = () => {
+        flashLife -= 0.04;
+        if (flashLife > 0) {
+            flashSprite.material.opacity = flashLife;
+            flashSprite.scale.multiplyScalar(1.03);
+            impactLight.intensity = flashIntensity * flashLife;
+            requestAnimationFrame(fadeFlash);
         } else {
+            scene.remove(flashSprite);
+            flashSprite.material.dispose();
             impactLight.intensity = 0;
         }
     };
-    fadeLight();
+    fadeFlash();
 
-    // Explosion Effect
-    // Cap particles to prevent crash at high energy (e.g. 1e16 J)
-    const particleCount = Math.min(500, 50 + Math.floor(energy / 1000));
-    explosionSystem.trigger(impactPos, particleCount);
+    // Multi-phase Explosion
+    const particleCount = Math.min(500, 100 + Math.floor(energy / 1000));
+    explosionSystem.trigger(impactPos, particleCount, diameter);
+
+    // Camera Shake
+    const shakeIntensity = Math.min(800, 100 + energy / 1e14);
+    let shakeTime = 0;
+    const baseCamPos = camera.position.clone();
+    const shakeCamera = () => {
+        shakeTime += 0.05;
+        if (shakeTime < 1.0) {
+            const decay = 1.0 - shakeTime;
+            const ox = (Math.random() - 0.5) * shakeIntensity * decay;
+            const oy = (Math.random() - 0.5) * shakeIntensity * decay * 0.5;
+            camera.position.x = baseCamPos.x + ox;
+            camera.position.y = baseCamPos.y + oy;
+            requestAnimationFrame(shakeCamera);
+        } else {
+            camera.position.copy(baseCamPos);
+        }
+    };
+    shakeCamera();
 
     // Play Sound
     soundManager.playExplosion();
@@ -668,55 +763,147 @@ function createLabel(position, diameter, depth) {
     const div = document.createElement('div');
     div.className = 'impact-marker';
 
-    // Display in KM
     const dia_km = diameter / 1000;
     const dep_km = depth / 1000;
 
     div.innerHTML = `<span class="marker-id">IMPACT ${impactCount}</span><br>Ø ${dia_km.toFixed(1)} km<br>↓ ${dep_km.toFixed(1)} km`;
 
-    // Click to Fly Camera
     div.onclick = () => {
         flyToCrater(position, diameter);
     };
 
     const label = new CSS2DObject(div);
     label.position.copy(position);
-    label.position.y += Math.max(100, diameter * 0.1); // Float above crater smartly
+    // Lift the label higher so it clears the rim and central peak, ensuring it's visible.
+    // Base lift is 500m to prevent clipping into small craters.
+    label.position.y += Math.max(500, diameter * 0.15);
     scene.add(label);
 
-    // Ghosted Gauge
-    // 1. Diameter Ring
-    const ringGeo = new THREE.RingGeometry(diameter / 2 - (diameter * 0.05), diameter / 2, 64);
-    ringGeo.rotateX(-Math.PI / 2);
-    // Lift scaling with diameter
-    const lift = Math.max(50, diameter * 0.05);
-    ringGeo.translate(0, lift, 0);
+    // --- Holographic Gauge Group ---
+    const gaugeGroup = new THREE.Group();
+    gaugeGroup.position.copy(position);
+    scene.add(gaugeGroup);
 
-    // 2. Depth Line
-    const points = [];
-    points.push(new THREE.Vector3(0, 0, 0));
-    points.push(new THREE.Vector3(0, -depth, 0));
-    const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-    const lineMat = new THREE.LineBasicMaterial({
-        color: 0x00ff00,
+    // Adjust lift to be lower and scale better for small craters (e.g. 1m over ground instead of 50-100m)
+    const lift = Math.max(1, diameter * 0.015);
+    const radius = diameter / 2;
+    const tickLen = diameter * 0.04; // Small tick marks
+
+    // Color palette
+    const cyanColor = 0x00ccff;
+    const depthColor = 0xff6644;
+
+    // --- 1. Diameter Ring (thin, glowing) ---
+    const ringMat = new THREE.MeshBasicMaterial({
+        color: cyanColor,
+        transparent: true,
+        opacity: 0.35,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending
+    });
+    const ringThickness = diameter * 0.012;
+    const ringGeo = new THREE.RingGeometry(radius - ringThickness, radius, 96);
+    ringGeo.rotateX(-Math.PI / 2);
+    ringGeo.translate(0, lift, 0);
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    gaugeGroup.add(ring);
+
+    // --- 2. Subtle disc fill (ghosted interior) ---
+    const discGeo = new THREE.CircleGeometry(radius - ringThickness, 64);
+    discGeo.rotateX(-Math.PI / 2);
+    discGeo.translate(0, lift - 1, 0);
+    const discMat = new THREE.MeshBasicMaterial({
+        color: cyanColor,
+        transparent: true,
+        opacity: 0.04,
+        side: THREE.DoubleSide
+    });
+    gaugeGroup.add(new THREE.Mesh(discGeo, discMat));
+
+    // --- 3. Crosshair Lines (dashed, with endpoint ticks) ---
+    const lineMat = new THREE.LineDashedMaterial({
+        color: cyanColor,
+        transparent: true,
+        opacity: 0.45,
+        dashSize: diameter * 0.03,
+        gapSize: diameter * 0.02,
+    });
+
+    // Helper: create a dashed line between two points
+    const makeDashed = (a, b) => {
+        const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
+        const line = new THREE.Line(geo, lineMat);
+        line.computeLineDistances(); // Required for dashed to work
+        return line;
+    };
+
+    // Horizontal crosshair
+    gaugeGroup.add(makeDashed(
+        new THREE.Vector3(-radius, lift, 0),
+        new THREE.Vector3(radius, lift, 0)
+    ));
+    // Vertical crosshair (Z-axis)
+    gaugeGroup.add(makeDashed(
+        new THREE.Vector3(0, lift, -radius),
+        new THREE.Vector3(0, lift, radius)
+    ));
+
+    // --- 4. Endpoint tick marks (small perpendicular lines at each tip) ---
+    const tickMat = new THREE.LineBasicMaterial({
+        color: cyanColor,
+        transparent: true,
+        opacity: 0.6
+    });
+
+    const tickPoints = [
+        // X-axis ticks (perpendicular in Z)
+        new THREE.Vector3(-radius, lift, -tickLen), new THREE.Vector3(-radius, lift, tickLen),
+        new THREE.Vector3(radius, lift, -tickLen), new THREE.Vector3(radius, lift, tickLen),
+        // Z-axis ticks (perpendicular in X)
+        new THREE.Vector3(-tickLen, lift, -radius), new THREE.Vector3(tickLen, lift, -radius),
+        new THREE.Vector3(-tickLen, lift, radius), new THREE.Vector3(tickLen, lift, radius),
+    ];
+    const tickGeo = new THREE.BufferGeometry().setFromPoints(tickPoints);
+    gaugeGroup.add(new THREE.LineSegments(tickGeo, tickMat));
+
+    // --- 5. Depth indicator (vertical line with bottom tick) ---
+    const depthMat = new THREE.LineDashedMaterial({
+        color: depthColor,
         transparent: true,
         opacity: 0.5,
-        linewidth: 2
+        dashSize: depth * 0.06,
+        gapSize: depth * 0.04,
     });
-    const line = new THREE.Line(lineGeo, lineMat);
-    line.position.copy(position);
-    scene.add(line);
 
-    // 3. Crosshairs
-    const crossPoints = [];
-    crossPoints.push(new THREE.Vector3(-diameter / 2, lift, 0));
-    crossPoints.push(new THREE.Vector3(diameter / 2, lift, 0));
-    crossPoints.push(new THREE.Vector3(0, lift, -diameter / 2));
-    crossPoints.push(new THREE.Vector3(0, lift, diameter / 2));
-    const crossGeo = new THREE.BufferGeometry().setFromPoints(crossPoints);
-    const crossLines = new THREE.LineSegments(crossGeo, lineMat);
-    crossLines.position.copy(position);
-    scene.add(crossLines);
+    const depthLine = makeDashed(
+        new THREE.Vector3(0, lift, 0),
+        new THREE.Vector3(0, lift - depth, 0)
+    );
+    depthLine.material = depthMat;
+    depthLine.computeLineDistances();
+    gaugeGroup.add(depthLine);
+
+    // Bottom depth tick (horizontal line at the bottom of the depth indicator)
+    const depthTickSize = diameter * 0.06;
+    const depthTickMat = new THREE.LineBasicMaterial({
+        color: depthColor,
+        transparent: true,
+        opacity: 0.5
+    });
+    const depthTickPts = [
+        new THREE.Vector3(-depthTickSize, lift - depth, 0),
+        new THREE.Vector3(depthTickSize, lift - depth, 0),
+    ];
+    const depthTickGeo = new THREE.BufferGeometry().setFromPoints(depthTickPts);
+    gaugeGroup.add(new THREE.LineSegments(depthTickGeo, depthTickMat));
+
+    // Top depth tick
+    const topTickPts = [
+        new THREE.Vector3(-depthTickSize, lift, 0),
+        new THREE.Vector3(depthTickSize, lift, 0),
+    ];
+    const topTickGeo = new THREE.BufferGeometry().setFromPoints(topTickPts);
+    gaugeGroup.add(new THREE.LineSegments(topTickGeo, depthTickMat));
 }
 
 // --- GUI / Controls ---
@@ -887,6 +1074,9 @@ function render() {
     const delta = clock.getDelta();
 
     world.step(timeStep, delta, 3);
+
+    // Slow Earth rotation
+    earthMesh.rotation.y += 0.0001 * delta;
 
     // Update Countdown
     if (isProjectileInbound && timeToImpact > 0) {

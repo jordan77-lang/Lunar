@@ -6,18 +6,17 @@
   <link rel="icon" type="image/svg+xml" href="/vite.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lunar Impact Simulator</title>
-  <script type="module" crossorigin src="/Lunar/assets/index-D2c6fFmc.js"></script>
-  <link rel="stylesheet" crossorigin href="/Lunar/assets/index-C_-_hxsF.css">
+  <script type="module" crossorigin src="/Lunar/assets/index-Yj0yNQzl.js"></script>
+  <link rel="stylesheet" crossorigin href="/Lunar/assets/index-DM-ZaBF5.css">
 </head>
 
 <body>
   <div id="app"></div>
 
   <!-- Countdown Overlay -->
-  <div id="countdown-box"
-    style="display: none; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 20; background: rgba(255, 0, 0, 0.3); padding: 10px; border-radius: 8px; border: 1px solid red; text-align: center; pointer-events: none;">
-    <p style="margin: 0; color: #ff5555; font-weight: bold; font-size: 14px;">IMPACT IN</p>
-    <p style="margin: 0; color: white; font-size: 24px; font-weight: bold;"><span id="time-val">0.00</span> s</p>
+  <div id="countdown-box">
+    <p class="countdown-label">IMPACT IN</p>
+    <p class="countdown-value"><span id="time-val">0.00</span> s</p>
   </div>
 
   <div id="ui-container">
@@ -27,6 +26,7 @@
         <div class="dash-item highlight">
           <div class="dash-label">Impact Energy</div>
           <div class="dash-value highlight-val"><span id="energy">0</span> <span class="unit">Joules</span></div>
+          <div class="dash-tnt" id="energy-tnt"></div>
         </div>
       </div>
       <div class="dash-row">
@@ -49,8 +49,8 @@
           </div>
         </div>
       </div>
-      <div class="dash-row shape-row" style="flex-direction: column; align-items: stretch; gap: 8px;">
-        <div class="dash-item shape-item" style="border:none; padding-bottom: 0;">
+      <div class="dash-row shape-row">
+        <div class="dash-item shape-item">
           <svg class="dash-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
           </svg>
@@ -59,27 +59,24 @@
             <div class="dash-value" id="crater-shape">Waiting...</div>
           </div>
         </div>
-        <div style="padding: 0 15px 15px 15px; width: 100%; box-sizing: border-box;">
-          <canvas id="craterProfile" width="300" height="80"
-            style="width: 100%; background: rgba(0,0,0,0.5); border-radius: 4px; border: 1px solid rgba(0, 255, 136, 0.2);"></canvas>
+        <div class="profile-canvas-wrap">
+          <canvas id="craterProfile" width="300" height="80"></canvas>
         </div>
       </div>
     </div>
     <div class="controls-info">
       <p>Controls: Drag to rotate | Scroll to zoom | Right-click to pan</p>
     </div>
-    <div style="margin-bottom: 5px; text-align: center; pointer-events: auto;">
-      <select id="chart-selector"
-        style="background: #333; color: white; border: 1px solid #555; padding: 2px; border-radius: 4px; font-size: 12px; cursor: pointer;">
+    <div class="chart-toolbar">
+      <select id="chart-selector">
         <option value="energy">Impact Energy</option>
         <option value="crater-dia">Mass vs Crater Dia</option>
         <option value="vel-dia">Velocity vs Crater Dia</option>
       </select>
-      <button id="btn-toggle-curve"
-        style="background: #444; color: white; border: 1px solid #666; padding: 2px 6px; border-radius: 4px; font-size: 11px; cursor: pointer; margin-left: 5px;">SHOW
-        CURVE</button>
+      <button id="btn-toggle-curve">SHOW CURVE</button>
     </div>
-    <div id="chart-container" style="max-width: 400px; width: 100%; height: 250px;">
+    <div id="chart-container">
+      <div id="chart-placeholder">🚀 Fire a projectile to see impact data</div>
       <canvas id="impactChart"></canvas>
     </div>
   </div>
@@ -105,7 +102,7 @@
       <label>Angle <span id="val-angle" class="value-display">90 deg</span></label>
       <input type="range" id="inp-angle" min="5" max="90" value="90">
     </div>
-    <button id="fire-btn">FIRE PROJECTILE</button>
+    <button id="fire-btn" class="pulsing">FIRE PROJECTILE</button>
     <button id="reset-btn">RESET SIMULATION</button>
   </div>
 

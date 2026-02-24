@@ -32,22 +32,33 @@ body {
   transition: transform 0.3s ease;
 }
 
-@media (max-width: 768px) {
-  #ui-controls {
-    top: auto;
-    bottom: 20px;
-    right: 50%;
-    transform: translateX(50%);
-    width: 90%;
-    max-width: 400px;
-    padding: 15px;
+@media (max-width: 1024px) {
+  body {
+    overflow-y: auto;
   }
 
   #ui-container {
-    top: 10px;
-    left: 10px;
-    transform: scale(0.85);
-    transform-origin: top left;
+    position: relative;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 10px;
+    box-sizing: border-box;
+    pointer-events: auto;
+  }
+
+  #ui-controls {
+    position: relative;
+    top: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100%;
+    padding: 15px;
+    box-sizing: border-box;
+  }
+
+  #chart-container {
+    max-width: 100% !important;
   }
 }
 
@@ -276,8 +287,100 @@ button#reset-btn:active {
   transform: translateY(1px);
 }
 
+/* Countdown Overlay */
+#countdown-box {
+  display: none;
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  background: rgba(255, 0, 0, 0.3);
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid red;
+  text-align: center;
+  pointer-events: none;
+}
+
+.countdown-label {
+  margin: 0;
+  color: #ff5555;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.countdown-value {
+  margin: 0;
+  color: white;
+  font-size: 24px;
+  font-weight: bold;
+}
+
+/* TNT Equivalent */
+.dash-tnt {
+  font-size: 11px;
+  color: #ffb86c;
+  font-family: monospace;
+  margin-top: 2px;
+}
+
+/* Shape Row Overrides */
+.shape-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.shape-item {
+  border: none !important;
+  padding-bottom: 0 !important;
+}
+
+.profile-canvas-wrap {
+  padding: 0 15px 15px 15px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#craterProfile {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+/* Chart Toolbar */
+.chart-toolbar {
+  margin-bottom: 5px;
+  text-align: center;
+  pointer-events: auto;
+}
+
+#chart-selector {
+  background: #333;
+  color: white;
+  border: 1px solid #555;
+  padding: 2px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#btn-toggle-curve {
+  background: #444;
+  color: white;
+  border: 1px solid #666;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  margin-left: 5px;
+}
+
 /* Canvas for chart */
 #chart-container {
+  position: relative;
   background: rgba(10, 15, 25, 0.85);
   border: 1px solid rgba(100, 200, 255, 0.1);
   padding: 10px;
@@ -285,6 +388,44 @@ button#reset-btn:active {
   margin-top: 15px;
   pointer-events: auto;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  max-width: 400px;
+  width: 100%;
+  height: 250px;
+}
+
+/* Chart Placeholder (first-use) */
+#chart-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #889;
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  pointer-events: none;
+  z-index: 1;
+}
+
+#chart-placeholder.hidden {
+  display: none;
+}
+
+/* Pulsing Fire Button (first-use guidance) */
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 4px 30px rgba(0, 255, 136, 0.7), 0 0 60px rgba(0, 255, 136, 0.3);
+  }
+}
+
+button#fire-btn.pulsing {
+  animation: pulse-glow 2s ease-in-out infinite;
 }
 
 /* Impact 3D Markers */
@@ -298,13 +439,11 @@ button#reset-btn:active {
   border-radius: 4px;
   cursor: pointer;
   pointer-events: auto;
-  /* CSS2DRenderer needs pointer events enabled on the child elements */
   backdrop-filter: blur(2px);
   box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
   transition: all 0.2s;
   text-transform: uppercase;
   margin-top: -15px;
-  /* Offset to center over crater slightly */
 }
 
 .impact-marker:hover {
