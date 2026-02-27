@@ -50,8 +50,11 @@ export function geoToECEF(lat, lng, alt = 0) {
 }
 
 /**
- * Build a rotation matrix that maps ECEF → local ENU frame at lat/lng.
- * In the local frame: +X = East, +Y = North, +Z = Up.
+ * Build a rotation matrix that maps ECEF → local frame at lat/lng,
+ * aligned to Three.js Y-up convention:
+ *   +X = East,  +Y = Up (away from Earth),  +Z = South
+ *
+ * This is a right-handed coordinate system matching Three.js defaults.
  */
 export function ecefToENUMatrix(lat, lng) {
     const φ = lat * (Math.PI / 180);
@@ -59,13 +62,15 @@ export function ecefToENUMatrix(lat, lng) {
     const sinφ = Math.sin(φ), cosφ = Math.cos(φ);
     const sinλ = Math.sin(λ), cosλ = Math.cos(λ);
 
-    // Columns: East, North, Up expressed in ECEF
+    // ECEF unit vectors for the local tangent plane
     const east = new THREE.Vector3(-sinλ, cosλ, 0);
     const north = new THREE.Vector3(-sinφ * cosλ, -sinφ * sinλ, cosφ);
     const up = new THREE.Vector3(cosφ * cosλ, cosφ * sinλ, sinφ);
 
+    // Three.js Y-up: X=East, Y=Up, Z=South (=-North)
+    const south = north.clone().negate();
     const m = new THREE.Matrix4();
-    m.makeBasis(east, north, up);
+    m.makeBasis(east, up, south);
     return m;
 }
 

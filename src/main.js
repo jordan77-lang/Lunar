@@ -366,22 +366,22 @@ function onEarthClick() {
         earthTiles.flyToLocation(lat, lng);
         document.getElementById('earth-loading').classList.remove('hidden');
 
-        // Position camera above the surface target (Y = up in ENU frame)
-        // ~15 km altitude gives a clear orbital approach view
-        camera.position.set(0, 15000, 20000);
+        // Position camera looking straight down from ~25 km altitude
+        camera.position.set(0, 25000, 0);
         camera.lookAt(0, 0, 0);
         controls.target.set(0, 0, 0);
-        controls.minDistance = 500;
+        controls.minDistance = 200;
         controls.maxDistance = 800000;
-        controls.maxPolarAngle = Math.PI;  // Full rotation freedom in Earth mode
+        controls.maxPolarAngle = Math.PI * 0.85;  // Allow tilting but prevent going underground
+        controls.enableDamping = true;
         controls.update();
 
         // Wire up the search box now that the Places API is loaded
         initEarthSearch({
             onPlaceSelected: ({ lat, lng, name }) => {
                 earthTiles.flyToLocation(lat, lng);
-                // Reset camera to approach altitude over new location
-                camera.position.set(0, 15000, 20000);
+                // Reset camera to top-down view over new location
+                camera.position.set(0, 25000, 0);
                 camera.lookAt(0, 0, 0);
                 controls.target.set(0, 0, 0);
                 // Reset reticule target to tile origin when new location loads
@@ -587,6 +587,64 @@ function handleEarthImpact(projectile) {
     }
 
     const impactPos = pendingImpactPos.clone();
+
+    // --- Earth crater overlay mesh ---
+    // We can't deform the 3D tile geometry, so we overlay a crater mesh.
+    const craterRadius = diameter / 2;
+    const craterSegs = 48;
+    const craterGeo = new THREE.CircleGeometry(craterRadius * 1.5, craterSegs);
+    craterGeo.rotateX(-Math.PI / 2); // lay flat on Y=0 plane
+
+    // Deform vertices to create a bowl + raised rim shape
+    const cPos = craterGeo.attributes.position;
+    const cColors = new Float32Array(cPos.count * 3);
+    for (let i = 0; i < cPos.count; i++) {
+        const x = cPos.getX(i);
+        const z = cPos.getZ(i);
+        const dist = Math.sqrt(x * x + z * z);
+        const normDist = dist / craterRadius;
+
+        let y = 0;
+        if (normDist < 1.0) {
+            // Bowl interior — parabolic depression
+            y = -depth * (1 - normDist * normDist);
+            // Dark scorched colour
+            const brightness = 0.15 + 0.2 * normDist;
+            cColors[i * 3] = brightness * 0.8;
+            cColors[i * 3 + 1] = brightness * 0.7;
+            cColors[i * 3 + 2] = brightness * 0.6;
+        } else if (normDist < 1.3) {
+            // Raised rim
+            const rimT = (normDist - 1.0) / 0.3;
+            y = depth * 0.15 * Math.cos(rimT * Math.PI / 2);
+            // Lighter disturbed earth
+            cColors[i * 3] = 0.6;
+            cColors[i * 3 + 1] = 0.55;
+            cColors[i * 3 + 2] = 0.45;
+        } else {
+            // Ejecta blanket — fade to transparent
+            const ejectaT = (normDist - 1.3) / 0.2;
+            cColors[i * 3] = 0.5;
+            cColors[i * 3 + 1] = 0.45;
+            cColors[i * 3 + 2] = 0.35;
+        }
+        cPos.setY(i, y);
+    }
+    craterGeo.setAttribute('color', new THREE.Float32BufferAttribute(cColors, 3));
+    craterGeo.computeVertexNormals();
+
+    const craterMesh = new THREE.Mesh(craterGeo, new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.9,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: true,
+    }));
+    craterMesh.position.copy(impactPos);
+    craterMesh.position.y += 5; // slight offset above ground to avoid z-fighting
+    craterMesh.renderOrder = 10;
+    scene.add(craterMesh);
 
     // Flash + explosion (reuse existing systems)
     impactLight.position.copy(impactPos);
