@@ -388,6 +388,7 @@ function onEarthClick() {
         controls.maxDistance = 800000;
         controls.maxPolarAngle = Math.PI * 0.85;  // Allow tilting but prevent going underground
         controls.enableDamping = true;
+        controls.enabled = true; // MUST RE-ENABLE AFTER FLIGHT
         controls.update();
 
         // Wire up the search box now that the Places API is loaded

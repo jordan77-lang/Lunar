@@ -5,6 +5,8 @@ body {
   overflow: hidden;
   font-family: 'Inter', sans-serif;
   color: white;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #ui-container {
@@ -190,6 +192,8 @@ input[type=range] {
   height: 4px;
   border-radius: 2px;
   outline: none;
+  user-select: auto;
+  -webkit-user-select: auto;
 }
 
 input[type=range]::-webkit-slider-thumb {
@@ -546,6 +550,8 @@ button#fire-btn.pulsing {
   font-family: 'Inter', sans-serif;
   font-size: 14px;
   min-width: 0;
+  user-select: auto;
+  -webkit-user-select: auto;
 }
 
 #earth-search::placeholder {
@@ -563,12 +569,13 @@ button#fire-btn.pulsing {
 
 .pac-item {
   color: #ccc !important;
-  border-top: 1px solid rgba(255,255,255,0.05) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
   padding: 6px 12px !important;
   cursor: pointer;
 }
 
-.pac-item:hover, .pac-item-selected {
+.pac-item:hover,
+.pac-item-selected {
   background: rgba(0, 255, 136, 0.1) !important;
 }
 
