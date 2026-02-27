@@ -376,6 +376,8 @@ function onEarthClick() {
         // --- Physics isolation: remove Moon entirely, enable Earth ground ---
         world.gravity.set(0, -EARTH_GRAVITY, 0);
 
+        earthGroup.visible = false;
+
         state.currentMode = 'earth';
 
         // Load tiles centred on the default/last target location
@@ -465,6 +467,8 @@ btnReturnMoon.addEventListener('click', () => {
     // Moon origin), NOT near the Earth sphere. Compute where the camera would
     // be if it were that same offset applied relative to the Earth globe:
     const earthCamWorldPos = earthCenterWorld.clone().add(camera.position);
+
+    earthGroup.visible = true;
 
     // Keep Earth constraints active during the flight so OrbitControls doesn't
     // clamp the camera while it travels the full Earth→Moon distance.
