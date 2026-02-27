@@ -617,10 +617,16 @@ function handleEarthImpact(projectile) {
 
     const angleRad = state.params.angle * (Math.PI / 180);
     const angleFactor = Math.pow(Math.sin(angleRad), 1 / 3);
+
+    // Gravity scaling: crater size scales as g^(-0.22)
+    const gravityScale = Math.pow(EARTH_GRAVITY / MOON_GRAVITY, -0.22);
+
+    // Base Holsapple-Schmidt is calibrated for the Moon
     const diameter = HOLSAPPLE_COEFF
         * Math.pow(mass, HOLSAPPLE_MASS_EXP)
         * Math.pow(velocity, HOLSAPPLE_VEL_EXP)
-        * angleFactor;
+        * angleFactor
+        * gravityScale;
 
     let depth;
     if (diameter <= SIMPLE_COMPLEX_THRESHOLD_M) {
