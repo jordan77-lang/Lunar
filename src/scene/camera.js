@@ -26,10 +26,10 @@ function easeInOut(t) {
  * @param {number} diameter - Crater diameter in meters
  */
 export function flyToCrater(camera, controls, targetPos, diameter) {
-    const startCamPos  = camera.position.clone();
-    const startTarget  = controls.target.clone();
-    const viewDist     = Math.max(2000, diameter * 2.0);
-    const finalCamPos  = new THREE.Vector3(
+    const startCamPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const viewDist = Math.max(2000, diameter * 2.0);
+    const finalCamPos = new THREE.Vector3(
         targetPos.x,
         targetPos.y + viewDist * 0.6,
         targetPos.z + viewDist
@@ -62,15 +62,15 @@ export function flyToCrater(camera, controls, targetPos, diameter) {
 export function transitionToEarth(camera, controls, earthGroup, earthRadius, onComplete) {
     controls.enabled = false;
 
-    const savedPos    = camera.position.clone();
+    const savedPos = camera.position.clone();
     const savedTarget = controls.target.clone();
 
     // earthGroup may be parented to the camera, so use getWorldPosition
     // to get its actual world-space centre for the flight calculation.
     const earthCenter = new THREE.Vector3();
     earthGroup.getWorldPosition(earthCenter);
-    const flightDir   = new THREE.Vector3().subVectors(earthCenter, camera.position).normalize();
-    const stopDist    = earthCenter.distanceTo(camera.position) - earthRadius * 1.5;
+    const flightDir = new THREE.Vector3().subVectors(earthCenter, camera.position).normalize();
+    const stopDist = earthCenter.distanceTo(camera.position) - earthRadius * 1.5;
     const finalCamPos = camera.position.clone().add(flightDir.multiplyScalar(stopDist));
 
     let frame = 0;
@@ -114,15 +114,25 @@ export function transitionToEarth(camera, controls, earthGroup, earthRadius, onC
  * @param {THREE.Vector3}           earthCenter  — world-space centre of the Earth sphere
  * @param {number}                  earthRadius  — visual radius of the Earth sphere (m)
  * @param {function}                onComplete   — called when flight ends
+ * @param {THREE.Vector3}           [earthCamWorldPos] — optional world-space camera position
+ *                                                       near the Earth; used as flight start.
  */
-export function returnToMoon(camera, controls, savedPos, savedTarget, earthCenter, earthRadius, onComplete) {
+export function returnToMoon(camera, controls, savedPos, savedTarget, earthCenter, earthRadius, onComplete, earthCamWorldPos) {
     controls.enabled = false;
 
-    const startCamPos = camera.position.clone();
-    const startTarget = controls.target.clone();
+    // Use the provided Earth-space camera position if available, otherwise
+    // fall back to the current camera position (which may be near the Moon origin).
+    const startCamPos = earthCamWorldPos ? earthCamWorldPos.clone() : camera.position.clone();
+    const startTarget = earthCamWorldPos ? earthCenter.clone() : controls.target.clone();
+
+    // Immediately snap the camera to the correct starting position so the
+    // first rendered frame of the animation shows the Earth globe.
+    camera.position.copy(startCamPos);
+    controls.target.copy(startTarget);
+    controls.update();
 
     // Phase 1 end: above tile surface, pulling out toward the globe edge.
-    const earthDir    = earthCenter.clone().normalize();
+    const earthDir = earthCenter.clone().normalize();
     const pullBackPos = earthCenter.clone().addScaledVector(earthDir, earthRadius * 3.5);
 
     // Phase 2 end: stand-off distance — full globe visible, dramatic scale.
@@ -147,7 +157,7 @@ export function returnToMoon(camera, controls, savedPos, savedTarget, earthCente
     const PHASE2 = 60;   // ~1.0 s — zoom out to see the full globe
     const PHASE3 = 90;   // ~1.5 s — arc through deep space
     const PHASE4 = 80;   // ~1.3 s — approach and settle at Moon
-    const TOTAL  = PHASE1 + PHASE2 + PHASE3 + PHASE4; // ~4.6 s
+    const TOTAL = PHASE1 + PHASE2 + PHASE3 + PHASE4; // ~4.6 s
 
     let frame = 0;
 
@@ -158,21 +168,21 @@ export function returnToMoon(camera, controls, savedPos, savedTarget, earthCente
 
         if (frame <= PHASE1) {
             // Phase 1: rise radially away from the tile surface toward the globe edge
-            const t    = frame / PHASE1;
+            const t = frame / PHASE1;
             const ease = t * t; // ease-in quad — weighted departure
             camPos = new THREE.Vector3().lerpVectors(startCamPos, pullBackPos, ease);
             controls.target.lerpVectors(startTarget, earthCenter, ease);
 
         } else if (frame <= PHASE1 + PHASE2) {
             // Phase 2: zoom out to globe-view vantage — easeInOut
-            const t    = (frame - PHASE1) / PHASE2;
+            const t = (frame - PHASE1) / PHASE2;
             const ease = easeInOut(t);
             camPos = new THREE.Vector3().lerpVectors(pullBackPos, globeViewPos, ease);
             controls.target.copy(earthCenter); // keep Earth centred in frame
 
         } else if (frame <= PHASE1 + PHASE2 + PHASE3) {
             // Phase 3: Bézier arc from globe vantage toward Moon — easeInOut
-            const t    = (frame - PHASE1 - PHASE2) / PHASE3;
+            const t = (frame - PHASE1 - PHASE2) / PHASE3;
             const ease = easeInOut(t);
             camPos = bezier3(globeViewPos, midPoint, savedPos, ease);
             // Look-at smoothly transitions Earth → Moon
@@ -180,7 +190,7 @@ export function returnToMoon(camera, controls, savedPos, savedTarget, earthCente
 
         } else {
             // Phase 4: gentle ease-out arrival into Moon orbit
-            const t    = (frame - PHASE1 - PHASE2 - PHASE3) / PHASE4;
+            const t = (frame - PHASE1 - PHASE2 - PHASE3) / PHASE4;
             const ease = easeOut(t);
             const approachStart = savedPos.clone().addScaledVector(
                 new THREE.Vector3(0, 1, 0), 10000 * (1 - ease)

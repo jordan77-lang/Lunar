@@ -77,12 +77,12 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 3.2); // Intense sunlight,
 dirLight.position.set(100000, 25000, 100000);
 dirLight.castShadow = true;
 const shadowSize = 150000;
-dirLight.shadow.camera.top    =  shadowSize;
+dirLight.shadow.camera.top = shadowSize;
 dirLight.shadow.camera.bottom = -shadowSize;
-dirLight.shadow.camera.left   = -shadowSize;
-dirLight.shadow.camera.right  =  shadowSize;
+dirLight.shadow.camera.left = -shadowSize;
+dirLight.shadow.camera.right = shadowSize;
 dirLight.shadow.bias = -0.0001;
-dirLight.shadow.mapSize.width  = 2048;
+dirLight.shadow.mapSize.width = 2048;
 dirLight.shadow.mapSize.height = 2048;
 scene.add(dirLight);
 
@@ -100,7 +100,7 @@ scene.add(impactLight);
 // Post-Processing (Bloom)
 // =============================================================
 const renderPass = new RenderPass(scene, camera);
-const bloomPass  = new UnrealBloomPass(
+const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
     BLOOM_STRENGTH,
     BLOOM_RADIUS,
@@ -114,47 +114,47 @@ composer.addPass(bloomPass);
 // =============================================================
 // Starfield
 // =============================================================
-const starsGeo  = new THREE.BufferGeometry();
+const starsGeo = new THREE.BufferGeometry();
 const positions = new Float32Array(STAR_COUNT * 3);
-const colors    = new Float32Array(STAR_COUNT * 3);
+const colors = new Float32Array(STAR_COUNT * 3);
 // Place stars far enough that the camera can never reach them (maxDistance = 350km)
-const maxDist   = 4000000;
+const maxDist = 4000000;
 
 // Stellar type color palette (O/B → M sequence)
 const starPalette = [
-    { r: 0.7,  g: 0.8,  b: 1.0  }, // Blue-white (O/B)  15%
-    { r: 1.0,  g: 1.0,  b: 1.0  }, // White (A/F)        55%
-    { r: 1.0,  g: 0.95, b: 0.85 }, // Warm white (G)     15%
-    { r: 1.0,  g: 0.85, b: 0.6  }, // Orange (K)         10%
-    { r: 1.0,  g: 0.7,  b: 0.5  }, // Deep orange (M)     5%
+    { r: 0.7, g: 0.8, b: 1.0 }, // Blue-white (O/B)  15%
+    { r: 1.0, g: 1.0, b: 1.0 }, // White (A/F)        55%
+    { r: 1.0, g: 0.95, b: 0.85 }, // Warm white (G)     15%
+    { r: 1.0, g: 0.85, b: 0.6 }, // Orange (K)         10%
+    { r: 1.0, g: 0.7, b: 0.5 }, // Deep orange (M)     5%
 ];
 
 for (let i = 0; i < STAR_COUNT; i++) {
-    const r     = maxDist * (0.8 + Math.random() * 0.2);
+    const r = maxDist * (0.8 + Math.random() * 0.2);
     const theta = Math.random() * Math.PI * 2;
     // Full sphere distribution — stars below the horizon are naturally occluded
     // by the opaque moon mesh via depth testing (depthTest: true on the material).
-    const phi   = Math.acos(1 - 2 * Math.random()); // uniform sphere sampling
+    const phi = Math.acos(1 - 2 * Math.random()); // uniform sphere sampling
 
-    positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
     positions[i * 3 + 1] = r * Math.cos(phi);
     positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
 
     const roll = Math.random();
-    const col  = roll < 0.15 ? starPalette[0]
-               : roll < 0.70 ? starPalette[1]
-               : roll < 0.85 ? starPalette[2]
-               : roll < 0.95 ? starPalette[3]
-               :               starPalette[4];
+    const col = roll < 0.15 ? starPalette[0]
+        : roll < 0.70 ? starPalette[1]
+            : roll < 0.85 ? starPalette[2]
+                : roll < 0.95 ? starPalette[3]
+                    : starPalette[4];
 
-    const brightness    = 0.6 + Math.random() * 0.4;
-    colors[i * 3]     = col.r * brightness;
+    const brightness = 0.6 + Math.random() * 0.4;
+    colors[i * 3] = col.r * brightness;
     colors[i * 3 + 1] = col.g * brightness;
     colors[i * 3 + 2] = col.b * brightness;
 }
 
 starsGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-starsGeo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+starsGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 scene.add(new THREE.Points(starsGeo, new THREE.PointsMaterial({
     size: 1600, vertexColors: true, transparent: true,
     opacity: 0.9, sizeAttenuation: true, fog: false,
@@ -173,7 +173,7 @@ scene.add(new THREE.Points(starsGeo, new THREE.PointsMaterial({
 //
 // Artistic angular size ~8°: noticeably larger than "correct" (2°)
 // so it reads as a dramatic presence without dominating the sky.
-const earthDist   = 2000000;           // 2 000 km world-space distance
+const earthDist = 2000000;           // 2 000 km world-space distance
 const earthRadius = earthDist * 0.07;  // ~8° apparent half-angle
 
 const earthGroup = new THREE.Group();
@@ -244,7 +244,7 @@ earthGroup.add(atmOuter);
 // Upper-left sky — classic Apollo composition (~17° left, ~23° above horizon)
 earthGroup.position.set(
     -earthDist * 0.28,
-     earthDist * 0.38,
+    earthDist * 0.38,
     -earthDist * 0.88
 );
 // Axial tilt ~23.5°: North Pole tilted upper-right
@@ -288,9 +288,19 @@ world.gravity.set(0, -MOON_GRAVITY, 0);
 // =============================================================
 // Game Objects
 // =============================================================
-const moon            = new Moon(scene, world);
+const moon = new Moon(scene, world);
 const explosionSystem = new Explosion(scene);
-const soundManager    = new SoundManager();
+const soundManager = new SoundManager();
+
+// Earth ground plane — added/removed from the physics world when
+// switching modes so projectile collisions stay isolated.
+const earthGroundShape = new CANNON.Plane();
+const earthGroundBody = new CANNON.Body({
+    mass: 0,
+    shape: earthGroundShape,
+    material: new CANNON.Material({ friction: 0.5, restitution: 0.3 }),
+});
+earthGroundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
 
 // =============================================================
 // Earth Tiles (Google Photorealistic 3D)
@@ -329,10 +339,10 @@ scene.add(targetMarker);
 // Earth Transition
 // =============================================================
 const earthContainer = document.getElementById('earth-container');
-const btnReturnMoon  = document.getElementById('btn-return-moon');
+const btnReturnMoon = document.getElementById('btn-return-moon');
 
 // Saved camera state for returning from Earth
-let savedEarthCamPos    = new THREE.Vector3();
+let savedEarthCamPos = new THREE.Vector3();
 let savedEarthCamTarget = new THREE.Vector3();
 
 function onEarthClick() {
@@ -341,8 +351,14 @@ function onEarthClick() {
         earthContainer.classList.add('active');
         btnReturnMoon.style.display = 'block';
         document.querySelector('#ui-container h1').innerText = 'EARTH IMPACT';
-        moon.mesh.visible = false;  // Hide Moon terrain in Earth mode
+
+        // --- Physics isolation: disable Moon body, enable Earth ground ---
+        moon.mesh.visible = false;
+        moon.horizonMesh.visible = false;
+        moon.body.collisionResponse = false;
+        world.addBody(earthGroundBody);
         world.gravity.set(0, -EARTH_GRAVITY, 0);
+
         state.currentMode = 'earth';
 
         // Load tiles centred on the default/last target location
@@ -357,6 +373,7 @@ function onEarthClick() {
         controls.target.set(0, 0, 0);
         controls.minDistance = 500;
         controls.maxDistance = 800000;
+        controls.maxPolarAngle = Math.PI;  // Full rotation freedom in Earth mode
         controls.update();
 
         // Wire up the search box now that the Places API is loaded
@@ -387,12 +404,12 @@ function onEarthClick() {
 }
 
 function updateEarthTargetStrip(name, lat, lng) {
-    const strip  = document.getElementById('earth-target-strip');
+    const strip = document.getElementById('earth-target-strip');
     const nameEl = document.getElementById('earth-target-name');
     const coordEl = document.getElementById('earth-target-coords');
     if (!strip) return;
     strip.classList.remove('hidden');
-    nameEl.innerText  = name;
+    nameEl.innerText = name;
     coordEl.innerText = `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
 }
 
@@ -406,17 +423,29 @@ btnReturnMoon.addEventListener('click', () => {
     const earthCenterWorld = new THREE.Vector3();
     earthGroup.getWorldPosition(earthCenterWorld);
 
+    // The Earth-mode camera sits at (0, 15000, 20000) in world space (near the
+    // Moon origin), NOT near the Earth sphere. Compute where the camera would
+    // be if it were that same offset applied relative to the Earth globe:
+    const earthCamWorldPos = earthCenterWorld.clone().add(camera.position);
+
     // Keep Earth constraints active during the flight so OrbitControls doesn't
     // clamp the camera while it travels the full Earth→Moon distance.
     // Restore Moon constraints only in onComplete, after the flight lands.
     returnToMoon(camera, controls, savedEarthCamPos, savedEarthCamTarget, earthCenterWorld, earthRadius, () => {
         earthTiles.dispose();
+
+        // --- Physics isolation: re-enable Moon body, remove Earth ground ---
         moon.mesh.visible = true;
+        moon.horizonMesh.visible = true;
+        moon.body.collisionResponse = true;
+        world.removeBody(earthGroundBody);
         world.gravity.set(0, -MOON_GRAVITY, 0);
+
         controls.minDistance = 2000;
         controls.maxDistance = 350000;
+        controls.maxPolarAngle = Math.PI / 2; // Restore Moon constraint
         state.currentMode = 'moon';
-    });
+    }, earthCamWorldPos);
 });
 
 // =============================================================
@@ -426,8 +455,8 @@ btnReturnMoon.addEventListener('click', () => {
 // Flight time is fixed so every impact is cinematic regardless of
 // velocity or mass settings. Crater physics still uses the configured
 // values — the Cannon body is purely for visuals and collision detection.
-const FLIGHT_TIME   = 3;    // seconds
-const SPAWN_HEIGHT  = 50000; // 50 km above the surface
+const FLIGHT_TIME = 3;    // seconds
+const SPAWN_HEIGHT = 50000; // 50 km above the surface
 
 // Capture the intended surface target at fire time so handleImpact can
 // use it regardless of where the physics body ends up (tunneling artifact).
@@ -436,10 +465,10 @@ let pendingImpactPos = new THREE.Vector3();
 function fireProjectile() {
     if (state.projectiles.length > 0) return;
 
-    const g        = MOON_GRAVITY;
-    const v        = state.params.velocity * 1000; // km/s → m/s
+    const g = MOON_GRAVITY;
+    const v = state.params.velocity * 1000; // km/s → m/s
     const angleRad = state.params.angle * (Math.PI / 180);
-    const vH       = v * Math.cos(angleRad); // horizontal speed magnitude
+    const vH = v * Math.cos(angleRad); // horizontal speed magnitude
 
     // Random azimuth each fire — the slider controls elevation angle only.
     // This means the asteroid can arrive from any compass bearing.
@@ -462,7 +491,7 @@ function fireProjectile() {
     );
     const velocityVec = new THREE.Vector3(vX, vY, vZ);
 
-    state.timeToImpact        = FLIGHT_TIME;
+    state.timeToImpact = FLIGHT_TIME;
     state.isProjectileInbound = true;
 
     const countdownBox = document.getElementById('countdown-box');
@@ -501,18 +530,18 @@ function fireEarthProjectile() {
     impactPos.y = 0; // snap to surface
     pendingImpactPos.copy(impactPos);
 
-    const v        = state.params.velocity * 1000;
+    const v = state.params.velocity * 1000;
     const angleRad = state.params.angle * (Math.PI / 180);
-    const vH       = v * Math.cos(angleRad);
-    const azimuth  = Math.random() * Math.PI * 2;
+    const vH = v * Math.cos(angleRad);
+    const azimuth = Math.random() * Math.PI * 2;
     const vX = vH * Math.cos(azimuth);
     const vZ = vH * Math.sin(azimuth);
     const vY = (-SPAWN_HEIGHT + 0.5 * EARTH_GRAVITY * FLIGHT_TIME * FLIGHT_TIME) / FLIGHT_TIME;
 
-    const launchPos   = new THREE.Vector3(impactPos.x - vX * FLIGHT_TIME, SPAWN_HEIGHT, impactPos.z - vZ * FLIGHT_TIME);
+    const launchPos = new THREE.Vector3(impactPos.x - vX * FLIGHT_TIME, SPAWN_HEIGHT, impactPos.z - vZ * FLIGHT_TIME);
     const velocityVec = new THREE.Vector3(vX, vY, vZ);
 
-    state.timeToImpact        = FLIGHT_TIME;
+    state.timeToImpact = FLIGHT_TIME;
     state.isProjectileInbound = true;
 
     const countdownBox = document.getElementById('countdown-box');
@@ -539,12 +568,12 @@ function handleEarthImpact(projectile) {
     projectile.shouldDestroy = true;
 
     const velocity = state.params.velocity * 1000;
-    const mass     = projectile.body.mass;
-    const energy   = 0.5 * mass * velocity * velocity;
+    const mass = projectile.body.mass;
+    const energy = 0.5 * mass * velocity * velocity;
 
-    const angleRad    = state.params.angle * (Math.PI / 180);
+    const angleRad = state.params.angle * (Math.PI / 180);
     const angleFactor = Math.pow(Math.sin(angleRad), 1 / 3);
-    const diameter    = HOLSAPPLE_COEFF
+    const diameter = HOLSAPPLE_COEFF
         * Math.pow(mass, HOLSAPPLE_MASS_EXP)
         * Math.pow(velocity, HOLSAPPLE_VEL_EXP)
         * angleFactor;
@@ -636,15 +665,15 @@ function handleImpact(projectile) {
     // Use the configured velocity for all crater physics — the Cannon body
     // velocity reflects the cinematic trajectory, not the user's setting.
     const velocity = state.params.velocity * 1000; // km/s → m/s
-    const mass     = projectile.body.mass;
+    const mass = projectile.body.mass;
 
     // Kinetic energy: E = ½mv²
     const energy = 0.5 * mass * velocity * velocity;
 
     // Holsapple-Schmidt crater diameter (gravity regime)
-    const angleRad    = state.params.angle * (Math.PI / 180);
+    const angleRad = state.params.angle * (Math.PI / 180);
     const angleFactor = Math.pow(Math.sin(angleRad), 1 / 3);
-    const diameter    = HOLSAPPLE_COEFF
+    const diameter = HOLSAPPLE_COEFF
         * Math.pow(mass, HOLSAPPLE_MASS_EXP)
         * Math.pow(velocity, HOLSAPPLE_VEL_EXP)
         * angleFactor;
@@ -761,7 +790,7 @@ initPointerHandlers({
 });
 
 initControlBindings({
-    onFire:  () => {
+    onFire: () => {
         if (state.currentMode === 'earth') fireEarthProjectile();
         else fireProjectile();
     },
@@ -772,14 +801,14 @@ initControlBindings({
 // Render Loop
 // =============================================================
 const timeStep = 1 / 60;
-let prevTime   = performance.now();
+let prevTime = performance.now();
 
 function animate() {
     requestAnimationFrame(animate);
 
-    const now   = performance.now();
+    const now = performance.now();
     const delta = (now - prevTime) / 1000; // ms → seconds
-    prevTime    = now;
+    prevTime = now;
 
     world.step(timeStep, delta, 3);
 
@@ -819,7 +848,7 @@ function animate() {
     }
 
     // Scale reticules by camera distance so they stay readable at any zoom
-    const dist        = camera.position.distanceTo(reticule.position);
+    const dist = camera.position.distanceTo(reticule.position);
     const scaleFactor = Math.max(0.1, dist / 50000);
     reticule.scale.set(scaleFactor, 1, scaleFactor);
     targetMarker.scale.set(scaleFactor, 1, scaleFactor);
