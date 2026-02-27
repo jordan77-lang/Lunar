@@ -18,6 +18,7 @@
 
 import * as THREE from 'three';
 import { TilesRenderer } from '3d-tiles-renderer';
+import { GoogleCloudAuthPlugin } from '3d-tiles-renderer';
 import { state } from '../state.js';
 
 // WGS-84 semi-major axis (metres)
@@ -52,9 +53,9 @@ export function ecefToENUMatrix(lat, lng) {
     const sinλ = Math.sin(λ), cosλ = Math.cos(λ);
 
     // Columns: East, North, Up expressed in ECEF
-    const east  = new THREE.Vector3(-sinλ,          cosλ,         0);
-    const north = new THREE.Vector3(-sinφ * cosλ,  -sinφ * sinλ,  cosφ);
-    const up    = new THREE.Vector3( cosφ * cosλ,   cosφ * sinλ,  sinφ);
+    const east = new THREE.Vector3(-sinλ, cosλ, 0);
+    const north = new THREE.Vector3(-sinφ * cosλ, -sinφ * sinλ, cosφ);
+    const up = new THREE.Vector3(cosφ * cosλ, cosφ * sinλ, sinφ);
 
     const m = new THREE.Matrix4();
     m.makeBasis(east, north, up);
@@ -69,12 +70,12 @@ export class EarthTiles {
      * @param {string}               apiKey   — Google Maps Platform API key
      */
     constructor(scene, camera, renderer, apiKey) {
-        this.scene    = scene;
-        this.camera   = camera;
+        this.scene = scene;
+        this.camera = camera;
         this.renderer = renderer;
-        this.apiKey   = apiKey;
-        this.tiles    = null;
-        this.group    = new THREE.Group();
+        this.apiKey = apiKey;
+        this.tiles = null;
+        this.group = new THREE.Group();
         scene.add(this.group);
 
         // Current centre of the tile view
@@ -96,10 +97,16 @@ export class EarthTiles {
             this.group.clear();
         }
 
-        // Google Photorealistic 3D Tiles root URL
-        const url = `https://tile.googleapis.com/v1/3dtiles/root.json?key=${this.apiKey}`;
-
-        const tiles = new TilesRenderer(url);
+        // Use GoogleCloudAuthPlugin for proper session-based authentication.
+        // The plugin automatically:
+        //   1. Sets the root URL to Google's 3D Tiles endpoint
+        //   2. Appends the API key + session token to every tile request
+        //   3. Handles session token refresh on expiry
+        const tiles = new TilesRenderer();
+        tiles.registerPlugin(new GoogleCloudAuthPlugin({
+            apiToken: this.apiKey,
+            autoRefreshToken: true,
+        }));
         tiles.setCamera(this.camera);
         tiles.setResolutionFromRenderer(this.camera, this.renderer);
 
@@ -107,7 +114,7 @@ export class EarthTiles {
         // We apply the inverse of the ECEF → ENU rotation so tiles render
         // in a right-side-up orientation with +Y pointing away from Earth.
         const ecefOrigin = geoToECEF(lat, lng, 0);
-        const enuMatrix  = ecefToENUMatrix(lat, lng);
+        const enuMatrix = ecefToENUMatrix(lat, lng);
 
         // tiles.group transform: shift ECEF origin to (0,0,0) then rotate
         const shift = new THREE.Matrix4().makeTranslation(
@@ -129,9 +136,9 @@ export class EarthTiles {
         this.tiles = tiles;
 
         // Store in state for access by main.js
-        state.earth.tileset  = tiles;
-        state.earth.lat      = lat;
-        state.earth.lng      = lng;
+        state.earth.tileset = tiles;
+        state.earth.lat = lat;
+        state.earth.lng = lng;
     }
 
     /** Call every frame in the render loop. */
