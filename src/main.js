@@ -434,8 +434,8 @@ btnReturnMoon.addEventListener('click', () => {
     btnReturnMoon.style.display = 'none';
     document.querySelector('#ui-container h1').innerText = 'LUNAR IMPACT';
 
-    // Immediately hide Earth impacts during the transition flight back
-    earthImpactsGroup.visible = false;
+    // Completely destroy Earth impacts so they cannot persist (HTML labels sometimes ignore visibility)
+    clearGroup(earthImpactsGroup);
     // Hide Earth-specific UI overlays completely
     const strip = document.getElementById('earth-target-strip');
     if (strip) strip.classList.add('hidden');
@@ -951,5 +951,28 @@ window.addEventListener('resize', () => {
     composer.setSize(window.innerWidth, window.innerHeight);
     labelRenderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+function clearGroup(group) {
+    while (group.children.length > 0) {
+        const object = group.children[0];
+        group.remove(object);
+
+        if (object.isMesh || object.isLine) {
+            object.geometry?.dispose();
+            if (Array.isArray(object.material)) {
+                object.material.forEach(m => m?.dispose());
+            } else {
+                object.material?.dispose();
+            }
+        } else if (object.isGroup) {
+            clearGroup(object); // Recursive clear
+        }
+
+        // CSS2DObject cleanup
+        if (object.element && object.element.parentNode) {
+            object.element.parentNode.removeChild(object.element);
+        }
+    }
+}
 
 animate();
