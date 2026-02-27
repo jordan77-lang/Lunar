@@ -358,6 +358,7 @@ function onEarthClick() {
 
     // Immediately hide Moon impacts + terrain during the transition flight out
     moonImpactsGroup.visible = false;
+    setGroupLabelsVisible(moonImpactsGroup, false); // Manually hide CSS2D labels
     scene.remove(moon.mesh);
     scene.remove(moon.horizonMesh);
 
@@ -386,7 +387,8 @@ function onEarthClick() {
         controls.target.set(0, 0, 0);
         controls.minDistance = 200;
         controls.maxDistance = 800000;
-        controls.maxPolarAngle = Math.PI * 0.85;  // Allow tilting but prevent going underground
+        // Restrict tilt to 0.45 PI (slightly above horizon) so user can't look from underground
+        controls.maxPolarAngle = Math.PI * 0.45;
         controls.enableDamping = true;
         controls.enabled = true; // MUST RE-ENABLE AFTER FLIGHT
         controls.update();
@@ -394,6 +396,9 @@ function onEarthClick() {
         // Wire up the search box now that the Places API is loaded
         initEarthSearch({
             onPlaceSelected: ({ lat, lng, name }) => {
+                // Clear any existing craters so they don't float in the new city
+                clearGroup(earthImpactsGroup);
+
                 earthTiles.flyToLocation(lat, lng);
                 // Reset camera to top-down view over new location (offset Z to avoid lock)
                 camera.position.set(0, 25000, 1);
@@ -464,6 +469,7 @@ btnReturnMoon.addEventListener('click', () => {
         scene.add(moon.mesh);
         scene.add(moon.horizonMesh);
         moonImpactsGroup.visible = true;
+        setGroupLabelsVisible(moonImpactsGroup, true);
 
         world.addBody(moon.body);
         world.removeBody(earthGroundBody);
@@ -976,3 +982,19 @@ function clearGroup(group) {
 }
 
 animate();
+
+/**
+ * Recursively walk a Group and apply display: none/block to CSS2DObject HTML elements.
+ * This is necessary because CSS2DRenderer doesn't always cascade .visible = false 
+ * down to its HTML elements in some Three.js versions.
+ */
+function setGroupLabelsVisible(group, isVisible) {
+    group.children.forEach(child => {
+        if (child.element) {
+            child.element.style.display = isVisible ? 'block' : 'none';
+        }
+        if (child.isGroup) {
+            setGroupLabelsVisible(child, isVisible);
+        }
+    });
+}
