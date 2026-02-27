@@ -3,680 +3,576 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import * as CANNON from 'cannon-es';
-import Chart from 'chart.js/auto';
-import { Moon } from './scene/Moon.js';
-import { Projectile } from './physics/Projectile.js';
 
+import { Moon } from './scene/Moon.js';
+import { EarthTiles } from './scene/Earth.js';
+import { Projectile } from './physics/Projectile.js';
 import { SoundManager } from './utils/Sound.js';
 import { Explosion } from './utils/Explosion.js';
 
-// --- Sound ---
-const soundManager = new SoundManager();
+import {
+    BLOOM_THRESHOLD, BLOOM_STRENGTH, BLOOM_RADIUS,
+    STAR_COUNT,
+    HOLSAPPLE_COEFF, HOLSAPPLE_MASS_EXP, HOLSAPPLE_VEL_EXP,
+    PIKE_SIMPLE_DEPTH_RATIO, PIKE_COMPLEX_COEFF, PIKE_COMPLEX_EXP,
+    SIMPLE_COMPLEX_THRESHOLD_M,
+    MOON_GRAVITY,
+    EARTH_GRAVITY,
+} from './constants.js';
+import { state } from './state.js';
+import { initCharts } from './ui/charts.js';
+import { updateStats } from './ui/hud.js';
+import { initEarthSearch, reverseGeocode } from './ui/search.js';
+import { createImpactMarker } from './scene/markers.js';
+import { flyToCrater, transitionToEarth, returnToMoon } from './scene/camera.js';
+import { initPointerHandlers, initControlBindings } from './input.js';
 
-// --- Scene Setup ---
+// =============================================================
+// Scene
+// =============================================================
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000000); // Stark black space
-scene.fog = new THREE.FogExp2(0x080808, 0.0000008); // Very subtle horizon haze — terrain only
+scene.background = new THREE.Color(0x000000);
+scene.fog = new THREE.FogExp2(0x080808, 0.0000008);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 100, 2000000); // Near/Far planes increased
-camera.position.set(0, 50000, 100000); // 100km out
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 100, 6000000);
+camera.position.set(0, 50000, 100000);
 camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-// Clamping pixel ratio to max 2 prevents the post-processing Bloom from tanking 4K/5K displays
+// Clamping pixel ratio to max 2 prevents Bloom from tanking 4K/5K displays
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadow edges
-renderer.toneMapping = THREE.ACESFilmicToneMapping; // Photographic exposure handling
-renderer.toneMappingExposure = 1.2; // Slightly boosted exposure
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
 document.querySelector('#app').appendChild(renderer.domElement);
 
 const labelRenderer = new CSS2DRenderer();
 labelRenderer.setSize(window.innerWidth, window.innerHeight);
 labelRenderer.domElement.style.position = 'absolute';
 labelRenderer.domElement.style.top = '0px';
-labelRenderer.domElement.style.pointerEvents = 'none'; // Allow clicking through
+labelRenderer.domElement.style.pointerEvents = 'none';
 document.body.appendChild(labelRenderer.domElement);
 
-// --- Controls ---
+// =============================================================
+// Controls
+// =============================================================
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-controls.maxPolarAngle = Math.PI / 2.0; // Lock perfectly to the horizon line
+controls.maxPolarAngle = Math.PI / 2.0;
 controls.minDistance = 2000;
-controls.maxDistance = 1500000; // Allow zooming way out to see the massive new plane
+controls.maxDistance = 350000; // ~350 km — far enough to see full playable area, never exposes star sphere
 
-// --- Lights ---
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.005); // Near-zero ambient — vacuum has no fill light
+// =============================================================
+// Lights
+// =============================================================
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.005); // Near-zero — vacuum has no fill light
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 3.2); // Intense sunlight — high contrast lunar look
-dirLight.position.set(100000, 25000, 100000); // Very low sun angle for long drastic shadows
+const dirLight = new THREE.DirectionalLight(0xffffff, 3.2); // Intense sunlight, high-contrast lunar look
+dirLight.position.set(100000, 25000, 100000);
 dirLight.castShadow = true;
 const shadowSize = 150000;
-dirLight.shadow.camera.top = shadowSize;
+dirLight.shadow.camera.top    =  shadowSize;
 dirLight.shadow.camera.bottom = -shadowSize;
-dirLight.shadow.camera.left = -shadowSize;
-dirLight.shadow.camera.right = shadowSize;
+dirLight.shadow.camera.left   = -shadowSize;
+dirLight.shadow.camera.right  =  shadowSize;
 dirLight.shadow.bias = -0.0001;
-dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.width  = 2048;
 dirLight.shadow.mapSize.height = 2048;
 scene.add(dirLight);
 
-// Earthshine — faint blue fill from Earth's reflected light
-const earthshineLight = new THREE.DirectionalLight(0x4466aa, 0.05);
-earthshineLight.position.set(-200000, 250000, -500000); // From Earth's direction
+// Earthshine — faint blue-white fill light from Earth's direction (upper-left sky).
+// Direction matches earthGroup.position vector so lit faces are consistent.
+const earthshineLight = new THREE.DirectionalLight(0x6699cc, 0.08);
+earthshineLight.position.set(-0.28, 0.38, -0.88).normalize().multiplyScalar(500000);
 scene.add(earthshineLight);
 
-// Impact Flash Light
+// Impact flash — intensity set to 0 until an impact occurs
 const impactLight = new THREE.PointLight(0xffffff, 0, 50000);
 scene.add(impactLight);
 
-// --- Post Processing ---
-const renderScene = new RenderPass(scene, camera);
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-bloomPass.threshold = 0.8; // Only bloom very bright objects (ejecta and stars), prevent pure whiteouts
-bloomPass.strength = 0.6; // Lowered from 1.2
-bloomPass.radius = 0.5;
+// =============================================================
+// Post-Processing (Bloom)
+// =============================================================
+const renderPass = new RenderPass(scene, camera);
+const bloomPass  = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    BLOOM_STRENGTH,
+    BLOOM_RADIUS,
+    BLOOM_THRESHOLD  // Only bloom very bright objects (ejecta, stars); prevents whiteouts
+);
 
 const composer = new EffectComposer(renderer);
-composer.addPass(renderScene);
+composer.addPass(renderPass);
 composer.addPass(bloomPass);
 
-// --- Starfield (dense, color-varied) ---
-const starsGeometry = new THREE.BufferGeometry();
-const starsCount = 18000;
-const posArray = new Float32Array(starsCount * 3);
-const starColors = new Float32Array(starsCount * 3);
-const starSizes = new Float32Array(starsCount);
-const maxDist = 1000000;
+// =============================================================
+// Starfield
+// =============================================================
+const starsGeo  = new THREE.BufferGeometry();
+const positions = new Float32Array(STAR_COUNT * 3);
+const colors    = new Float32Array(STAR_COUNT * 3);
+// Place stars far enough that the camera can never reach them (maxDistance = 350km)
+const maxDist   = 4000000;
 
-// Star color palette: cool blue-white, neutral white, warm orange
+// Stellar type color palette (O/B → M sequence)
 const starPalette = [
-    { r: 0.7, g: 0.8, b: 1.0 },  // Blue-white (O/B stars) 15%
-    { r: 1.0, g: 1.0, b: 1.0 },  // White (A/F stars) 55%
-    { r: 1.0, g: 0.95, b: 0.85 }, // Warm white (G stars) 15%
-    { r: 1.0, g: 0.85, b: 0.6 },  // Orange (K stars) 10%
-    { r: 1.0, g: 0.7, b: 0.5 },   // Deep orange (M stars) 5%
+    { r: 0.7,  g: 0.8,  b: 1.0  }, // Blue-white (O/B)  15%
+    { r: 1.0,  g: 1.0,  b: 1.0  }, // White (A/F)        55%
+    { r: 1.0,  g: 0.95, b: 0.85 }, // Warm white (G)     15%
+    { r: 1.0,  g: 0.85, b: 0.6  }, // Orange (K)         10%
+    { r: 1.0,  g: 0.7,  b: 0.5  }, // Deep orange (M)     5%
 ];
 
-for (let i = 0; i < starsCount; i++) {
-    const r = maxDist * (0.8 + Math.random() * 0.2);
+for (let i = 0; i < STAR_COUNT; i++) {
+    const r     = maxDist * (0.8 + Math.random() * 0.2);
     const theta = Math.random() * Math.PI * 2;
-    const phi = Math.random() * (Math.PI / 2 + 0.2);
+    // Full sphere distribution — stars below the horizon are naturally occluded
+    // by the opaque moon mesh via depth testing (depthTest: true on the material).
+    const phi   = Math.acos(1 - 2 * Math.random()); // uniform sphere sampling
 
-    posArray[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-    posArray[i * 3 + 1] = r * Math.cos(phi);
-    posArray[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.cos(phi);
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
 
-    // Pick color by weighted random
     const roll = Math.random();
-    let color;
-    if (roll < 0.15) color = starPalette[0];
-    else if (roll < 0.70) color = starPalette[1];
-    else if (roll < 0.85) color = starPalette[2];
-    else if (roll < 0.95) color = starPalette[3];
-    else color = starPalette[4];
+    const col  = roll < 0.15 ? starPalette[0]
+               : roll < 0.70 ? starPalette[1]
+               : roll < 0.85 ? starPalette[2]
+               : roll < 0.95 ? starPalette[3]
+               :               starPalette[4];
 
-    // Add slight random brightness variation
-    const brightness = 0.6 + Math.random() * 0.4;
-    starColors[i * 3] = color.r * brightness;
-    starColors[i * 3 + 1] = color.g * brightness;
-    starColors[i * 3 + 2] = color.b * brightness;
-
-    // Size variation — most small, few bright
-    starSizes[i] = 200 + Math.random() * 600 + (Math.random() > 0.95 ? 800 : 0);
+    const brightness    = 0.6 + Math.random() * 0.4;
+    colors[i * 3]     = col.r * brightness;
+    colors[i * 3 + 1] = col.g * brightness;
+    colors[i * 3 + 2] = col.b * brightness;
 }
-starsGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-starsGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
-const starsMaterial = new THREE.PointsMaterial({
-    size: 400,
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.9,
-    sizeAttenuation: true,
-    fog: false // Stars must not be affected by horizon fog
-});
-const starMesh = new THREE.Points(starsGeometry, starsMaterial);
-scene.add(starMesh);
 
-// --- Earth Background ---
+starsGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+starsGeo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+scene.add(new THREE.Points(starsGeo, new THREE.PointsMaterial({
+    size: 1600, vertexColors: true, transparent: true,
+    opacity: 0.9, sizeAttenuation: true, fog: false,
+    depthTest: true,  // moon mesh occludes stars below the horizon naturally
+    depthWrite: false,
+})));
+
+// =============================================================
+// Earth Background
+// =============================================================
+// Earth in world space at 2 000 km — well beyond the camera's max
+// orbit of 350 km, so the maximum angular drift while orbiting is
+// atan(350/2000) ≈ 10°, imperceptible on a casual orbit.
+// Stars sit at up to 4 000 km so Earth is well inside the star sphere
+// and won't be clipped by the far plane (6 000 km).
+//
+// Artistic angular size ~8°: noticeably larger than "correct" (2°)
+// so it reads as a dramatic presence without dominating the sky.
+const earthDist   = 2000000;           // 2 000 km world-space distance
+const earthRadius = earthDist * 0.07;  // ~8° apparent half-angle
+
 const earthGroup = new THREE.Group();
-const earthRadius = 50000; // Larger for visual prominence
-const earthDist = 450000; // Closer for better visibility
 
+// Earth uses Layer 1 so a dedicated sun light (also on layer 1) illuminates
+// it correctly without affecting the Moon terrain (layer 0).
+const EARTH_LAYER = 1;
+
+// Earth surface — PBR material, lit by earthSunLight on layer 1 only.
+// Emissive lifts the night side to a deep ocean-blue rather than pure black.
 const earthGeo = new THREE.SphereGeometry(earthRadius, 64, 64);
-const textureLoader = new THREE.TextureLoader();
-const earthTexture = textureLoader.load('./earth.jpg');
-
-const earthMat = new THREE.MeshPhongMaterial({
-    map: earthTexture,
-    emissive: new THREE.Color(0x112233),
-    emissiveIntensity: 0.15,
-    specular: new THREE.Color(0x333344), // Ocean specular highlights
-    shininess: 15
+const earthMat = new THREE.MeshStandardMaterial({
+    roughness: 0.6,
+    metalness: 0.0,
+    emissive: new THREE.Color(0x0a1e35),
+    emissiveIntensity: 0.4,  // visible night-side city-light glow
 });
-
 const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+earthMesh.layers.set(EARTH_LAYER);
+earthMesh.renderOrder = -1;
 earthGroup.add(earthMesh);
 
-// Atmospheric glow shell
-const atmosGeo = new THREE.SphereGeometry(earthRadius * 1.025, 64, 64);
-const atmosMat = new THREE.MeshBasicMaterial({
-    color: 0x4488ff,
-    transparent: true,
-    opacity: 0.08,
-    side: THREE.BackSide // Render inside-out for glow effect
-});
-const atmosMesh = new THREE.Mesh(atmosGeo, atmosMat);
-earthGroup.add(atmosMesh);
+// Atmosphere limb — inner vivid Rayleigh band (electric blue terminator ring)
+const atmInner = new THREE.Mesh(
+    new THREE.SphereGeometry(earthRadius * 1.016, 64, 64),
+    new THREE.MeshBasicMaterial({
+        color: 0x66bbff,
+        transparent: true,
+        opacity: 0.55,
+        side: THREE.BackSide,
+        depthWrite: false,
+    })
+);
+atmInner.layers.set(EARTH_LAYER);
+atmInner.renderOrder = 0;
+earthGroup.add(atmInner);
 
-earthGroup.position.set(-earthDist * 0.3, earthDist * 0.4, -earthDist * 0.9);
-earthGroup.rotation.z = 0.4;
-earthGroup.rotation.y = -1.0;
-earthGroup.rotation.x = 0.2;
+// Atmosphere limb — mid diffuse scatter band
+const atmMid = new THREE.Mesh(
+    new THREE.SphereGeometry(earthRadius * 1.045, 64, 64),
+    new THREE.MeshBasicMaterial({
+        color: 0x2277ee,
+        transparent: true,
+        opacity: 0.22,
+        side: THREE.BackSide,
+        depthWrite: false,
+    })
+);
+atmMid.layers.set(EARTH_LAYER);
+atmMid.renderOrder = 0;
+earthGroup.add(atmMid);
+
+// Atmosphere limb — outer faint corona
+const atmOuter = new THREE.Mesh(
+    new THREE.SphereGeometry(earthRadius * 1.12, 64, 64),
+    new THREE.MeshBasicMaterial({
+        color: 0x1155cc,
+        transparent: true,
+        opacity: 0.08,
+        side: THREE.BackSide,
+        depthWrite: false,
+    })
+);
+atmOuter.layers.set(EARTH_LAYER);
+atmOuter.renderOrder = 0;
+earthGroup.add(atmOuter);
+
+// Upper-left sky — classic Apollo composition (~17° left, ~23° above horizon)
+earthGroup.position.set(
+    -earthDist * 0.28,
+     earthDist * 0.38,
+    -earthDist * 0.88
+);
+// Axial tilt ~23.5°: North Pole tilted upper-right
+earthGroup.rotation.set(0.18, -0.9, 0.41);
 scene.add(earthGroup);
 
-// --- Physics World ---
+// Dedicated sun for Earth — on layer 1 so it ONLY lights Earth meshes.
+// Sun direction matches the scene's main dirLight (front-right).
+const earthSunLight = new THREE.DirectionalLight(0xfff8f0, 4.0);
+earthSunLight.position.set(1.0, 0.4, 1.0).normalize().multiplyScalar(earthDist);
+earthSunLight.layers.set(EARTH_LAYER);
+scene.add(earthSunLight);
+
+// Camera must also enable layer 1 to see Earth objects
+camera.layers.enable(EARTH_LAYER);
+
+// Load earth texture with error boundary — fallback to solid blue if unavailable
+const textureLoader = new THREE.TextureLoader();
+textureLoader.load(
+    './earth.jpg',
+    (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        earthMat.map = tex;
+        earthMat.needsUpdate = true;
+    },
+    undefined,
+    () => {
+        earthMat.color.set(0x2255aa); // vivid blue fallback if texture missing
+        const el = document.getElementById('earth-loading');
+        if (el) el.innerText = 'Earth texture unavailable — using colour fallback.';
+        console.warn('main: failed to load earth.jpg — using fallback colour.');
+    }
+);
+
+// =============================================================
+// Physics World
+// =============================================================
 const world = new CANNON.World();
-world.gravity.set(0, -1.62, 0);
+world.gravity.set(0, -MOON_GRAVITY, 0);
 
-// --- Game Objects ---
-const moon = new Moon(scene, world);
+// =============================================================
+// Game Objects
+// =============================================================
+const moon            = new Moon(scene, world);
 const explosionSystem = new Explosion(scene);
+const soundManager    = new SoundManager();
 
-let projectiles = [];
+// =============================================================
+// Earth Tiles (Google Photorealistic 3D)
+// Replace YOUR_API_KEY with your Google Maps Platform key.
+// Get one at: https://console.cloud.google.com/
+// Enable: Map Tiles API + Places API + Geocoding API
+// =============================================================
+const GOOGLE_API_KEY = 'AIzaSyDGGUK5b09T90xyhqSaPfo5_5OCVMIGqso';
+const earthTiles = new EarthTiles(scene, camera, renderer, GOOGLE_API_KEY);
 
-// --- Parameters ---
-const params = {
-    velocity: 10, // km/s
-    angle: 90,
-    mass: 1e8, // kg (Start at min)
-    density: 3000, // kg/m^3 (rock)
-    reset: () => fireProjectile(),
-    target: new THREE.Vector3(0, 0, 0) // Default target center
-};
-
-// --- Targeting Reticule ---
-// Scale up reticule (1km size)
+// =============================================================
+// Targeting Reticules
+// =============================================================
 const reticuleGeo = new THREE.RingGeometry(1000, 1500, 32);
 reticuleGeo.rotateX(-Math.PI / 2);
-const reticuleMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthTest: false });
-const reticule = new THREE.Mesh(reticuleGeo, reticuleMat);
+const reticule = new THREE.Mesh(reticuleGeo, new THREE.MeshBasicMaterial({
+    color: 0xff0000, transparent: true, opacity: 0.8,
+    side: THREE.DoubleSide, depthTest: false,
+}));
 reticule.renderOrder = 999;
-reticule.position.copy(params.target);
-reticule.position.y = 0.1; // Slightly above ground
+reticule.position.copy(state.params.target);
+reticule.position.y = 0.1;
 scene.add(reticule);
 
-// --- Persistent Target Marker ---
-// --- Persistent Target Marker ---
 const markerGeo = new THREE.RingGeometry(200, 600, 32);
 markerGeo.rotateX(-Math.PI / 2);
-const markerMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 1.0, side: THREE.DoubleSide, depthTest: false });
-const targetMarker = new THREE.Mesh(markerGeo, markerMat);
+const targetMarker = new THREE.Mesh(markerGeo, new THREE.MeshBasicMaterial({
+    color: 0x00ff00, transparent: true, opacity: 1.0,
+    side: THREE.DoubleSide, depthTest: false,
+}));
 targetMarker.renderOrder = 999;
 targetMarker.visible = false;
 scene.add(targetMarker);
 
-// Raycaster for Picking
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
+// =============================================================
+// Earth Transition
+// =============================================================
+const earthContainer = document.getElementById('earth-container');
+const btnReturnMoon  = document.getElementById('btn-return-moon');
 
-function onPointerMove(event) {
-    pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-    pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+// Saved camera state for returning from Earth
+let savedEarthCamPos    = new THREE.Vector3();
+let savedEarthCamTarget = new THREE.Vector3();
 
-    // Update Reticule
-    raycaster.setFromCamera(pointer, camera);
-    const intersects = raycaster.intersectObject(moon.mesh);
+function onEarthClick() {
+    state.currentMode = 'transitioning';
+    const result = transitionToEarth(camera, controls, earthGroup, earthRadius, () => {
+        earthContainer.classList.add('active');
+        btnReturnMoon.style.display = 'block';
+        document.querySelector('#ui-container h1').innerText = 'EARTH IMPACT';
+        moon.mesh.visible = false;  // Hide Moon terrain in Earth mode
+        world.gravity.set(0, -EARTH_GRAVITY, 0);
+        state.currentMode = 'earth';
 
-    if (intersects.length > 0) {
-        const point = intersects[0].point;
-        reticule.position.set(point.x, point.y + 10, point.z); // Follow terrain height
-        reticule.visible = true;
-        document.body.style.cursor = 'crosshair';
-    } else {
-        reticule.visible = false;
-        document.body.style.cursor = 'default';
-    }
-}
+        // Load tiles centred on the default/last target location
+        const { lat, lng } = state.earth.impactLocation;
+        earthTiles.flyToLocation(lat, lng);
+        document.getElementById('earth-loading').classList.remove('hidden');
 
-function onPointerDown(event) {
-    if (event.target.closest('#ui-controls') || event.target.tagName === 'BUTTON' || event.target.closest('#chart-container')) {
-        return;
-    }
+        // Position camera above the surface target (Y = up in ENU frame)
+        // ~15 km altitude gives a clear orbital approach view
+        camera.position.set(0, 15000, 20000);
+        camera.lookAt(0, 0, 0);
+        controls.target.set(0, 0, 0);
+        controls.minDistance = 500;
+        controls.maxDistance = 800000;
+        controls.update();
 
-    raycaster.setFromCamera(pointer, camera);
-    const intersects = raycaster.intersectObject(moon.mesh);
-
-    if (intersects.length > 0) {
-        // Set solid target
-        params.target.copy(intersects[0].point);
-
-        // Move Marker
-        targetMarker.position.set(intersects[0].point.x, intersects[0].point.y + 20, intersects[0].point.z);
-        targetMarker.visible = true;
-    }
-}
-
-// Add listeners
-window.addEventListener('pointermove', onPointerMove);
-window.addEventListener('pointerdown', onPointerDown);
-
-// --- UI Updates ---
-const uiEnergy = document.getElementById('energy');
-const uiDiameter = document.getElementById('diameter');
-const uiDepth = document.getElementById('depth');
-const uiCountdownBox = document.getElementById('countdown-box');
-const uiTimeVal = document.getElementById('time-val');
-
-let timeToImpact = 0;
-let isProjectileInbound = false;
-
-// Chart Setup
-const ctx = document.getElementById('impactChart').getContext('2d');
-let impactChart = null;
-const impactHistory = []; // Store all impact data
-let currentChartType = 'energy';
-
-// Initialize Chart
-function initChart() {
-    if (impactChart) impactChart.destroy();
-
-    const selector = document.getElementById('chart-selector');
-    if (selector) currentChartType = selector.value;
-
-    // Toggle Button Visibility
-    const toggleBtn = document.getElementById('btn-toggle-curve');
-    if (toggleBtn) {
-        toggleBtn.style.display = (currentChartType === 'energy') ? 'none' : 'inline-block';
-    }
-
-    let config = {};
-
-    // Unit: All distance/size in km for display
-    if (currentChartType === 'energy') {
-        const recentHistory = impactHistory.slice(-5);
-        config = {
-            type: 'bar',
-            data: {
-                labels: recentHistory.map(d => `Impact ${d.id}`),
-                datasets: [{
-                    label: 'Impact Energy (J)',
-                    data: recentHistory.map(d => d.energy),
-                    backgroundColor: 'rgba(0, 255, 136, 0.2)',
-                    borderColor: 'rgba(0, 255, 136, 1)',
-                    borderWidth: 1
-                }]
+        // Wire up the search box now that the Places API is loaded
+        initEarthSearch({
+            onPlaceSelected: ({ lat, lng, name }) => {
+                earthTiles.flyToLocation(lat, lng);
+                // Reset camera to approach altitude over new location
+                camera.position.set(0, 15000, 20000);
+                camera.lookAt(0, 0, 0);
+                controls.target.set(0, 0, 0);
+                // Reset reticule target to tile origin when new location loads
+                state.params.target.set(0, 0, 0);
+                controls.update();
+                updateEarthTargetStrip(name, lat, lng);
             },
-            options: {
-                scales: {
-                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#ccc' }, title: { display: true, text: 'Energy (J)', color: '#ccc' } },
-                    x: { ticks: { color: '#ccc' } }
-                },
-                maintainAspectRatio: false,
-                plugins: { legend: { labels: { color: 'white' } } }
-            }
-        };
-    } else if (currentChartType === 'crater-dia') {
-        const historyData = impactHistory.map(d => ({ x: d.mass, y: d.craterDiameter / 1000 })); // m -> km
-
-        config = {
-            type: 'scatter',
-            data: {
-                datasets: [{
-                    label: 'Mass (kg) vs Crater Dia (km)',
-                    data: historyData,
-                    backgroundColor: 'rgba(255, 99, 132, 1)',
-                    borderColor: 'rgba(255, 99, 132, 1)',
-                }]
+            onClear: () => {
+                const strip = document.getElementById('earth-target-strip');
+                if (strip) strip.classList.add('hidden');
             },
-            options: {
-                scales: {
-                    x: {
-                        type: 'linear', // Use Linear scale for Mass to show Power Law curve shape
-                        position: 'bottom',
-                        title: { display: true, text: 'Mass (kg)', color: '#ccc' },
-                        ticks: {
-                            color: '#ccc',
-                            callback: function (value, index, values) {
-                                // Exponential notation for ticks
-                                return Number(value).toExponential();
-                            }
-                        },
-                        grid: { color: 'rgba(255,255,255,0.1)' }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Crater Diameter (km)', color: '#ccc' },
-                        ticks: { color: '#ccc' },
-                        grid: { color: 'rgba(255,255,255,0.1)' }
-                    }
-                },
-                maintainAspectRatio: false,
-                plugins: { legend: { labels: { color: 'white' } } }
-            }
-        };
-    } else if (currentChartType === 'vel-dia') {
-        const historyData = impactHistory.map(d => ({ x: d.velocity, y: d.craterDiameter / 1000 })); // m -> km, v is already km/s in history
+        });
 
-        config = {
-            type: 'scatter',
-            data: {
-                datasets: [{
-                    label: 'Velocity (km/s) vs Crater Dia (km)',
-                    data: historyData,
-                    backgroundColor: 'rgba(54, 162, 235, 1)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                }]
-            },
-            options: {
-                scales: {
-                    x: { type: 'linear', position: 'bottom', title: { display: true, text: 'Velocity (km/s)', color: '#ccc' }, ticks: { color: '#ccc' }, grid: { color: 'rgba(255,255,255,0.1)' } },
-                    y: { beginAtZero: true, title: { display: true, text: 'Crater Diameter (km)', color: '#ccc' }, ticks: { color: '#ccc' }, grid: { color: 'rgba(255,255,255,0.1)' } }
-                },
-                maintainAspectRatio: false,
-                plugins: { legend: { labels: { color: 'white' } } }
-            }
-        };
-    }
-
-    impactChart = new Chart(ctx, config);
-
-    // Auto-update Curve if applicable
-    updateCurve();
-}
-
-function updateCurve() {
-    if (!impactChart || currentChartType === 'energy') return;
-
-    // Check toggle state
-    if (!isCurveVisible) {
-        // Remove if exists
-        const existingIndex = impactChart.data.datasets.findIndex(d => d.label === 'Theoretical Curve');
-        if (existingIndex !== -1) {
-            impactChart.data.datasets.splice(existingIndex, 1);
-            impactChart.update();
-        }
-        return;
-    }
-
-    // Theoretical Power Law Curve
-    // Formula: D(m) = 0.158 * M^0.26 * V(m/s)^0.44 * AngleFactor
-    // Result D must be converted to km for graph.
-
-    const curvePoints = [];
-    const angleRad = params.angle * (Math.PI / 180);
-    const angleFactor = Math.pow(Math.sin(angleRad), 1 / 3);
-
-    if (currentChartType === 'crater-dia') {
-        // Plotting Mass (X) vs Diameter (Y, km)
-        // Var: Mass 1e8 to 1e15
-        // Const: Velocity (Current layout val in km/s)
-        const v_ms = params.velocity * 1000;
-
-        for (let exp = 8; exp <= 15; exp += 0.1) {
-            const m = Math.pow(10, exp);
-            const d_m = 0.158 * Math.pow(m, 0.26) * Math.pow(v_ms, 0.44) * angleFactor;
-            curvePoints.push({ x: m, y: d_m / 1000 }); // Display in km
-        }
-    } else if (currentChartType === 'vel-dia') {
-        // Plotting Velocity (X, km/s) vs Diameter (Y, km)
-        // Var: Velocity 5 to 80 (km/s)
-        // Const: Mass (Current slider)
-        const m = params.mass;
-
-        for (let v_km = 5; v_km <= 80; v_km += 1) {
-            const v_ms = v_km * 1000;
-            const d_m = 0.158 * Math.pow(m, 0.26) * Math.pow(v_ms, 0.44) * angleFactor;
-            curvePoints.push({ x: v_km, y: d_m / 1000 }); // Display in km
-        }
-    }
-
-    // Add Curve Dataset
-    const existingIndex = impactChart.data.datasets.findIndex(d => d.label === 'Theoretical Curve');
-    if (existingIndex !== -1) {
-        impactChart.data.datasets.splice(existingIndex, 1);
-    }
-
-    impactChart.data.datasets.push({
-        label: 'Theoretical Curve',
-        data: curvePoints,
-        type: 'line',
-        borderColor: 'rgba(255, 255, 255, 0.8)',
-        borderWidth: 2,
-        borderDash: [5, 5],
-        pointRadius: 0,
-        fill: false,
-        tension: 0.4
+        // Show the default target in the strip if one is already set
+        const { name } = state.earth.impactLocation;
+        if (name) updateEarthTargetStrip(name, lat, lng);
     });
-
-    impactChart.update();
+    savedEarthCamPos.copy(result.savedPos);
+    savedEarthCamTarget.copy(result.savedTarget);
 }
 
-// Initial load
-initChart();
-
-// Listener for dropdown
-const chartSelector = document.getElementById('chart-selector');
-if (chartSelector) {
-    chartSelector.addEventListener('change', () => initChart()); // Reset chart on change
+function updateEarthTargetStrip(name, lat, lng) {
+    const strip  = document.getElementById('earth-target-strip');
+    const nameEl = document.getElementById('earth-target-name');
+    const coordEl = document.getElementById('earth-target-coords');
+    if (!strip) return;
+    strip.classList.remove('hidden');
+    nameEl.innerText  = name;
+    coordEl.innerText = `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
 }
 
-// Toggle Curve Logic
-let isCurveVisible = false;
-const toggleBtn = document.getElementById('btn-toggle-curve');
+btnReturnMoon.addEventListener('click', () => {
+    state.currentMode = 'transitioning';
+    earthContainer.classList.remove('active');
+    btnReturnMoon.style.display = 'none';
+    document.querySelector('#ui-container h1').innerText = 'LUNAR IMPACT';
 
-if (toggleBtn) {
-    toggleBtn.addEventListener('click', () => {
-        isCurveVisible = !isCurveVisible;
+    // Get the Earth sphere's world-space centre for the departure animation.
+    const earthCenterWorld = new THREE.Vector3();
+    earthGroup.getWorldPosition(earthCenterWorld);
 
-        // Update Button Text
-        toggleBtn.innerText = isCurveVisible ? "HIDE CURVE" : "SHOW CURVE";
-
-        // Update Graph
-        updateCurve();
+    // Keep Earth constraints active during the flight so OrbitControls doesn't
+    // clamp the camera while it travels the full Earth→Moon distance.
+    // Restore Moon constraints only in onComplete, after the flight lands.
+    returnToMoon(camera, controls, savedEarthCamPos, savedEarthCamTarget, earthCenterWorld, earthRadius, () => {
+        earthTiles.dispose();
+        moon.mesh.visible = true;
+        world.gravity.set(0, -MOON_GRAVITY, 0);
+        controls.minDistance = 2000;
+        controls.maxDistance = 350000;
+        state.currentMode = 'moon';
     });
-}
+});
 
-let impactCount = 0;
+// =============================================================
+// Simulation — Fire & Impact
+// =============================================================
 
-function updateStats(energy, diameter, depth, mass, projectileDiameter) {
-    uiEnergy.innerText = energy.toExponential(2);
-    // TNT equivalent (1 megaton TNT ≈ 4.184 × 10^15 J)
-    const uiTnt = document.getElementById('energy-tnt');
-    if (uiTnt) {
-        const megatons = energy / 4.184e15;
-        if (megatons >= 0.001) {
-            uiTnt.innerText = `≈ ${megatons < 1 ? megatons.toFixed(3) : megatons.toFixed(1)} Mt TNT`;
-        } else {
-            const kilotons = megatons * 1000;
-            uiTnt.innerText = `≈ ${kilotons.toFixed(2)} kt TNT`;
-        }
-    }
-    // UI Display: Convert from meters to km
-    const dia_km = diameter / 1000;
-    const dep_km = depth / 1000;
+// Flight time is fixed so every impact is cinematic regardless of
+// velocity or mass settings. Crater physics still uses the configured
+// values — the Cannon body is purely for visuals and collision detection.
+const FLIGHT_TIME   = 3;    // seconds
+const SPAWN_HEIGHT  = 50000; // 50 km above the surface
 
-    uiDiameter.innerText = dia_km.toFixed(2);
-    uiDepth.innerText = dep_km.toFixed(2);
+// Capture the intended surface target at fire time so handleImpact can
+// use it regardless of where the physics body ends up (tunneling artifact).
+let pendingImpactPos = new THREE.Vector3();
 
-    // Morphology Display
-    const uiShape = document.getElementById('crater-shape');
-    let isComplex = false;
-    if (uiShape) {
-        if (diameter <= 15000) {
-            uiShape.innerText = "Simple (Bowl-Shaped)";
-            uiShape.style.color = "#00ff88";
-            isComplex = false;
-        } else {
-            uiShape.innerText = "Complex (Central Peak)";
-            uiShape.style.color = "#ffb86c";
-            isComplex = true;
-        }
-    }
-
-    drawCraterProfile(isComplex);
-
-    // Update History
-    impactCount++;
-    impactHistory.push({
-        id: impactCount,
-        energy: energy,
-        mass: mass,
-        velocity: params.velocity, // Storing km/s for easy graphing
-        craterDiameter: diameter, // Store meters internally for consistency? No, lets store raw meters
-        projectileDiameter: projectileDiameter
-    });
-
-    // Efficiency: If we just added a point, we can push to chart.
-    // But since we support switching, re-rendering or updating is needed.
-    // Let's just call initChart() to refresh the view with new data.
-    // Hide chart placeholder on first impact
-    const placeholder = document.getElementById('chart-placeholder');
-    if (placeholder) placeholder.classList.add('hidden');
-    initChart();
-}
-
-// --- Logic ---
 function fireProjectile() {
-    if (projectiles.length > 0) return;
+    if (state.projectiles.length > 0) return;
 
-    // Physics Constants
-    const g = 1.62;
-    const v = params.velocity * 1000; // Convert km/s to m/s for physics
-    const angleRad = params.angle * (Math.PI / 180);
+    const g        = MOON_GRAVITY;
+    const v        = state.params.velocity * 1000; // km/s → m/s
+    const angleRad = state.params.angle * (Math.PI / 180);
+    const vH       = v * Math.cos(angleRad); // horizontal speed magnitude
 
-    // Impact Velocity Components (Desired at ground level)
-    const vX_impact = v * Math.cos(angleRad);
-    const vY_impact = v * Math.sin(angleRad); // Magnitude
+    // Random azimuth each fire — the slider controls elevation angle only.
+    // This means the asteroid can arrive from any compass bearing.
+    const azimuth = Math.random() * Math.PI * 2;
+    const vX = vH * Math.cos(azimuth);
+    const vZ = vH * Math.sin(azimuth);
 
-    // 1. Calculate Max Height (Energy Constraint)
-    const h_max = (vY_impact * vY_impact) / (2 * g);
+    // Compute vY so the body falls from SPAWN_HEIGHT to y=0 in exactly FLIGHT_TIME seconds:
+    // 0 = SPAWN_HEIGHT + vY * t - ½g * t²  →  vY = (-SPAWN_HEIGHT + ½g * t²) / t
+    const vY = (-SPAWN_HEIGHT + 0.5 * g * FLIGHT_TIME * FLIGHT_TIME) / FLIGHT_TIME;
 
-    // 2. Determine Spawn Height
-    // Target 50,000m (50km) for visuals
-    let spawnHeight = 50000;
-    if (spawnHeight > h_max) {
-        spawnHeight = h_max - 500; // Slightly below peak
-    }
+    // Save the surface-level target (set by raycaster hit on terrain) for use at impact
+    pendingImpactPos.copy(state.params.target);
 
-    // 3. Calculate Vertical Launch Velocity (at Spawn Height)
-    // Energy: v_impact^2 = v_spawn^2 + 2gh
-    // v_spawn^2 = v_impact^2 - 2gh
-    let vY_spawn_sq = (vY_impact * vY_impact) - (2 * g * spawnHeight);
-    if (vY_spawn_sq < 0) vY_spawn_sq = 0;
-    const vY_spawn = -Math.sqrt(vY_spawn_sq); // Launching DOWNWARDS
+    // Spawn offset so the projectile arrives at the target from the chosen azimuth
+    const launchPos = new THREE.Vector3(
+        state.params.target.x - vX * FLIGHT_TIME,
+        SPAWN_HEIGHT,
+        state.params.target.z - vZ * FLIGHT_TIME
+    );
+    const velocityVec = new THREE.Vector3(vX, vY, vZ);
 
-    // 4. Calculate Time of Flight
-    // t = (vY_impact + vY_spawn) / g  (Note: vY_spawn is negative)
-    const time = (vY_impact + vY_spawn) / g;
+    state.timeToImpact        = FLIGHT_TIME;
+    state.isProjectileInbound = true;
 
-    // 5. Calculate Horizontal Distance
-    const dist = vX_impact * time;
-
-    // 6. Set Launch Position
-    const direction = new THREE.Vector3(1, 0, 0);
-    const launchPos = new THREE.Vector3().copy(params.target).sub(direction.clone().multiplyScalar(dist));
-    launchPos.y = spawnHeight;
-
-    // 7. Set Launch Velocity Vector
-    const velocityVec = direction.clone().multiplyScalar(vX_impact);
-    velocityVec.y = vY_spawn;
-
-    // Safety Check
-    if (isNaN(launchPos.x) || isNaN(launchPos.y) || isNaN(time)) {
-        console.warn("Launch param physics check failed, clamping.", { h_max, time, dist });
-        // Fallback for visual:
-        if (isNaN(time)) {
-            time = 10;
-        }
-    }
-
-    // Start Countdown
-    timeToImpact = time;
-    isProjectileInbound = true;
-    if (uiCountdownBox) uiCountdownBox.style.display = 'block';
+    const countdownBox = document.getElementById('countdown-box');
+    if (countdownBox) countdownBox.style.display = 'block';
 
     const fireBtn = document.getElementById('fire-btn');
-    if (fireBtn) {
-        fireBtn.disabled = true;
-        fireBtn.innerText = "INBOUND...";
-        fireBtn.classList.remove('pulsing'); // Stop first-use pulse
-    }
+    if (fireBtn) { fireBtn.disabled = true; fireBtn.innerText = 'INBOUND...'; fireBtn.classList.remove('pulsing'); }
 
-    // Single Initialization & Push
-    const projectile = new Projectile(scene, world, params.mass, params.density);
-    projectile.init(launchPos, velocityVec, params.mass);
+    const projectile = new Projectile(scene, world, state.params.mass, state.params.density);
+    projectile.init(launchPos, velocityVec, state.params.mass);
 
+    // Primary trigger: physics collision event
     projectile.body.addEventListener('collide', (e) => {
-        if (e.body.mass === 0) {
-            handleImpact(projectile, e);
-        }
+        if (e.body.mass === 0 && !projectile.shouldDestroy) handleImpact(projectile);
     });
-    projectiles.push(projectile);
+
+    // Fallback trigger: fire after FLIGHT_TIME if physics tunneling prevented the collision event
+    setTimeout(() => {
+        if (!projectile.shouldDestroy) handleImpact(projectile);
+    }, FLIGHT_TIME * 1000 + 150);
+
+    state.projectiles.push(projectile);
 }
 
-function handleImpact(projectile, event) {
-    // Determine impact velocity magnitude
-    const velocity = projectile.body.velocity.length();
-    const mass = projectile.body.mass;
+// =============================================================
+// Earth-mode fire & impact
+// =============================================================
 
-    // 1. Calculate Kinetic Energy: E = 0.5 * m * v^2
-    const energy = 0.5 * mass * velocity * velocity;
+function fireEarthProjectile() {
+    if (state.projectiles.length > 0) return;
 
-    // 2. Reference Scaling Law (From provided code)
-    // Formula from 'java code.txt': D(km) = 1.58E-4 * M^0.26 * V(km/s * 1000)^0.44
-    // Converted to Meters: D(m) = 0.158 * M^0.26 * V(m/s)^0.44
+    // Use the reticule-placed target (state.params.target) as the impact point.
+    // In Earth mode state.params.target is set by clicking on the ground plane,
+    // defaulting to (0,0,0) = tile origin if the user hasn't clicked yet.
+    const impactPos = state.params.target.clone();
+    impactPos.y = 0; // snap to surface
+    pendingImpactPos.copy(impactPos);
 
-    // Physics Note: The exponent 0.26 (approx 1/3.8) is characteristic of the 
-    // Holsapple-Schmidt Gravity Regime for non-porous targets.
-    // This implicitly handles the "large crater" scaling.
+    const v        = state.params.velocity * 1000;
+    const angleRad = state.params.angle * (Math.PI / 180);
+    const vH       = v * Math.cos(angleRad);
+    const azimuth  = Math.random() * Math.PI * 2;
+    const vX = vH * Math.cos(azimuth);
+    const vZ = vH * Math.sin(azimuth);
+    const vY = (-SPAWN_HEIGHT + 0.5 * EARTH_GRAVITY * FLIGHT_TIME * FLIGHT_TIME) / FLIGHT_TIME;
 
-    let diameter = 0.158 * Math.pow(mass, 0.26) * Math.pow(velocity, 0.44);
+    const launchPos   = new THREE.Vector3(impactPos.x - vX * FLIGHT_TIME, SPAWN_HEIGHT, impactPos.z - vZ * FLIGHT_TIME);
+    const velocityVec = new THREE.Vector3(vX, vY, vZ);
 
-    // Apply Angle Correction (Standard Efficiency)
-    // Reference likely assumes max efficiency or a specific angle. 
-    // We apply standard sin(theta)^(1/3) scaling to make angle meaningful.
-    const angleRad = params.angle * (Math.PI / 180);
-    const angleFactor = Math.pow(Math.sin(angleRad), 1 / 3);
+    state.timeToImpact        = FLIGHT_TIME;
+    state.isProjectileInbound = true;
 
-    diameter *= angleFactor;
+    const countdownBox = document.getElementById('countdown-box');
+    if (countdownBox) countdownBox.style.display = 'block';
 
-    // Log for verification
-    console.log("Physics Audit (Reference Formula):", {
-        mass, velocity, angle: params.angle,
-        baseDiameter: diameter / angleFactor,
-        finalDiameter: diameter
+    const fireBtn = document.getElementById('fire-btn');
+    if (fireBtn) { fireBtn.disabled = true; fireBtn.innerText = 'INBOUND...'; fireBtn.classList.remove('pulsing'); }
+
+    const projectile = new Projectile(scene, world, state.params.mass, state.params.density);
+    projectile.init(launchPos, velocityVec, state.params.mass);
+
+    projectile.body.addEventListener('collide', (e) => {
+        if (e.body.mass === 0 && !projectile.shouldDestroy) handleEarthImpact(projectile);
     });
+    setTimeout(() => {
+        if (!projectile.shouldDestroy) handleEarthImpact(projectile);
+    }, FLIGHT_TIME * 1000 + 150);
 
-    // Visuals
-    const impactPos = projectile.mesh.position.clone();
-    moon.addCrater(impactPos, diameter / 2, params.angle); // Pass radius and impact angle
+    state.projectiles.push(projectile);
+}
 
-    // Impact Flash Light
+function handleEarthImpact(projectile) {
+    if (projectile.shouldDestroy) return;
+    projectile.shouldDestroy = true;
+
+    const velocity = state.params.velocity * 1000;
+    const mass     = projectile.body.mass;
+    const energy   = 0.5 * mass * velocity * velocity;
+
+    const angleRad    = state.params.angle * (Math.PI / 180);
+    const angleFactor = Math.pow(Math.sin(angleRad), 1 / 3);
+    const diameter    = HOLSAPPLE_COEFF
+        * Math.pow(mass, HOLSAPPLE_MASS_EXP)
+        * Math.pow(velocity, HOLSAPPLE_VEL_EXP)
+        * angleFactor;
+
+    let depth;
+    if (diameter <= SIMPLE_COMPLEX_THRESHOLD_M) {
+        depth = diameter * PIKE_SIMPLE_DEPTH_RATIO;
+    } else {
+        const D_km = diameter / 1000;
+        depth = PIKE_COMPLEX_COEFF * Math.pow(D_km, PIKE_COMPLEX_EXP) * 1000;
+    }
+
+    const impactPos = pendingImpactPos.clone();
+
+    // Flash + explosion (reuse existing systems)
     impactLight.position.copy(impactPos);
     impactLight.position.y += 1000;
-    let flashIntensity = Math.min(15, 3 + Math.floor(energy / 1e14));
+    const flashIntensity = Math.min(15, 3 + Math.floor(energy / 1e14));
     impactLight.intensity = flashIntensity;
 
-    // Impact Flash Sprite (bright visual flash)
     const flashSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-        color: 0xffffcc,
-        transparent: true,
-        opacity: 1.0,
-        blending: THREE.AdditiveBlending
+        color: 0xffffcc, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending,
     }));
     const flashSize = Math.min(diameter * 0.8, 50000);
     flashSprite.scale.set(flashSize, flashSize, 1);
-    flashSprite.position.copy(impactPos);
-    flashSprite.position.y += 200;
+    flashSprite.position.copy(impactPos).setY(impactPos.y + 200);
     scene.add(flashSprite);
 
-    // Fade flash sprite and light
     let flashLife = 1.0;
     const fadeFlash = () => {
         flashLife -= 0.04;
@@ -693,22 +589,17 @@ function handleImpact(projectile, event) {
     };
     fadeFlash();
 
-    // Multi-phase Explosion
-    const particleCount = Math.min(500, 100 + Math.floor(energy / 1000));
-    explosionSystem.trigger(impactPos, particleCount, diameter);
+    explosionSystem.trigger(impactPos, Math.min(500, 100 + Math.floor(energy / 1000)), diameter);
 
-    // Camera Shake
     const shakeIntensity = Math.min(800, 100 + energy / 1e14);
-    let shakeTime = 0;
     const baseCamPos = camera.position.clone();
+    let shakeTime = 0;
     const shakeCamera = () => {
         shakeTime += 0.05;
         if (shakeTime < 1.0) {
             const decay = 1.0 - shakeTime;
-            const ox = (Math.random() - 0.5) * shakeIntensity * decay;
-            const oy = (Math.random() - 0.5) * shakeIntensity * decay * 0.5;
-            camera.position.x = baseCamPos.x + ox;
-            camera.position.y = baseCamPos.y + oy;
+            camera.position.x = baseCamPos.x + (Math.random() - 0.5) * shakeIntensity * decay;
+            camera.position.y = baseCamPos.y + (Math.random() - 0.5) * shakeIntensity * decay * 0.5;
             requestAnimationFrame(shakeCamera);
         } else {
             camera.position.copy(baseCamPos);
@@ -716,395 +607,220 @@ function handleImpact(projectile, event) {
     };
     shakeCamera();
 
-    // Play Sound
     soundManager.playExplosion();
 
-    // Reset UI
-    isProjectileInbound = false;
-    if (uiCountdownBox) uiCountdownBox.style.display = 'none';
+    state.isProjectileInbound = false;
+    const countdownBox = document.getElementById('countdown-box');
+    if (countdownBox) countdownBox.style.display = 'none';
 
     const fireBtn = document.getElementById('fire-btn');
-    if (fireBtn) {
-        fireBtn.disabled = false;
-        fireBtn.innerText = "FIRE PROJECTILE";
-    }
+    if (fireBtn) { fireBtn.disabled = false; fireBtn.innerText = 'FIRE PROJECTILE'; fireBtn.classList.add('pulsing'); }
 
-    // Update UI
-    // DEPTH CALCULATION (Pike 1977)
-    // Simple Craters (< 15 km): d = 0.2 * D
-    // Complex Craters (> 15 km): d = 1.04 * D^0.301 (Dimensions in km)
+    // Reverse-geocode the impact point for the HUD location name, then update stats
+    const { lat, lng } = state.earth.impactLocation;
+    reverseGeocode(lat, lng, GOOGLE_API_KEY).then(locationName => {
+        state.earth.impactLocation.name = locationName;
+        updateStats(energy, diameter, depth, mass, projectile.radius * 2, locationName);
+        createImpactMarker(
+            scene, impactPos, diameter, depth, state.impactCount,
+            (pos, dia) => flyToCrater(camera, controls, pos, dia)
+        );
+    });
+}
 
+function handleImpact(projectile) {
+    // Guard against double-fire (collision event + setTimeout fallback)
+    if (projectile.shouldDestroy) return;
+    projectile.shouldDestroy = true; // claim it immediately
+
+    // Use the configured velocity for all crater physics — the Cannon body
+    // velocity reflects the cinematic trajectory, not the user's setting.
+    const velocity = state.params.velocity * 1000; // km/s → m/s
+    const mass     = projectile.body.mass;
+
+    // Kinetic energy: E = ½mv²
+    const energy = 0.5 * mass * velocity * velocity;
+
+    // Holsapple-Schmidt crater diameter (gravity regime)
+    const angleRad    = state.params.angle * (Math.PI / 180);
+    const angleFactor = Math.pow(Math.sin(angleRad), 1 / 3);
+    const diameter    = HOLSAPPLE_COEFF
+        * Math.pow(mass, HOLSAPPLE_MASS_EXP)
+        * Math.pow(velocity, HOLSAPPLE_VEL_EXP)
+        * angleFactor;
+
+    // Pike (1977) crater depth
     let depth;
-    if (diameter <= 15000) {
-        depth = diameter * 0.2;
+    if (diameter <= SIMPLE_COMPLEX_THRESHOLD_M) {
+        depth = diameter * PIKE_SIMPLE_DEPTH_RATIO;
     } else {
         const D_km = diameter / 1000;
-        const d_km = 1.04 * Math.pow(D_km, 0.301);
-        depth = d_km * 1000;
+        depth = PIKE_COMPLEX_COEFF * Math.pow(D_km, PIKE_COMPLEX_EXP) * 1000; // back to meters
     }
 
-    // Calculate projectile real diameter (2 * radius)
-    // Note: projectile.radius is the physical radius, projectile.visRadius is clamped visuals
-    const projDia = projectile.radius * 2;
+    // Use the surface position captured at fire time, NOT the physics body position.
+    const impactPos = pendingImpactPos.clone();
 
-    // SCALING VISUAL FIX:
-    // If the crater is huge (km size), the visual lines need to be huge too.
-
-    updateStats(energy, diameter, depth, mass, projDia);
-
-    // Create HUD Label
-    createLabel(impactPos, diameter, depth);
-
-    // Mark for destruction
-    projectile.shouldDestroy = true;
-}
-
-function createLabel(position, diameter, depth) {
-    const div = document.createElement('div');
-    div.className = 'impact-marker';
-
-    const dia_km = diameter / 1000;
-    const dep_km = depth / 1000;
-
-    div.innerHTML = `<span class="marker-id">IMPACT ${impactCount}</span><br>Ø ${dia_km.toFixed(1)} km<br>↓ ${dep_km.toFixed(1)} km`;
-
-    div.onclick = () => {
-        flyToCrater(position, diameter);
-    };
-
-    const label = new CSS2DObject(div);
-    label.position.copy(position);
-    // Lift the label higher so it clears the rim and central peak, ensuring it's visible.
-    // Base lift is 500m to prevent clipping into small craters.
-    label.position.y += Math.max(500, diameter * 0.15);
-    scene.add(label);
-
-    // --- Holographic Gauge Group ---
-    const gaugeGroup = new THREE.Group();
-    gaugeGroup.position.copy(position);
-    scene.add(gaugeGroup);
-
-    // Adjust lift to be lower and scale better for small craters (e.g. 1m over ground instead of 50-100m)
-    const lift = Math.max(1, diameter * 0.015);
-    const radius = diameter / 2;
-    const tickLen = diameter * 0.04; // Small tick marks
-
-    // Color palette
-    const cyanColor = 0x00ccff;
-    const depthColor = 0xff6644;
-
-    // --- 1. Diameter Ring (thin, glowing) ---
-    const ringMat = new THREE.MeshBasicMaterial({
-        color: cyanColor,
-        transparent: true,
-        opacity: 0.35,
-        side: THREE.DoubleSide,
-        blending: THREE.AdditiveBlending
-    });
-    const ringThickness = diameter * 0.012;
-    const ringGeo = new THREE.RingGeometry(radius - ringThickness, radius, 96);
-    ringGeo.rotateX(-Math.PI / 2);
-    ringGeo.translate(0, lift, 0);
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    gaugeGroup.add(ring);
-
-    // --- 2. Subtle disc fill (ghosted interior) ---
-    const discGeo = new THREE.CircleGeometry(radius - ringThickness, 64);
-    discGeo.rotateX(-Math.PI / 2);
-    discGeo.translate(0, lift - 1, 0);
-    const discMat = new THREE.MeshBasicMaterial({
-        color: cyanColor,
-        transparent: true,
-        opacity: 0.04,
-        side: THREE.DoubleSide
-    });
-    gaugeGroup.add(new THREE.Mesh(discGeo, discMat));
-
-    // --- 3. Crosshair Lines (dashed, with endpoint ticks) ---
-    const lineMat = new THREE.LineDashedMaterial({
-        color: cyanColor,
-        transparent: true,
-        opacity: 0.45,
-        dashSize: diameter * 0.03,
-        gapSize: diameter * 0.02,
-    });
-
-    // Helper: create a dashed line between two points
-    const makeDashed = (a, b) => {
-        const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
-        const line = new THREE.Line(geo, lineMat);
-        line.computeLineDistances(); // Required for dashed to work
-        return line;
-    };
-
-    // Horizontal crosshair
-    gaugeGroup.add(makeDashed(
-        new THREE.Vector3(-radius, lift, 0),
-        new THREE.Vector3(radius, lift, 0)
-    ));
-    // Vertical crosshair (Z-axis)
-    gaugeGroup.add(makeDashed(
-        new THREE.Vector3(0, lift, -radius),
-        new THREE.Vector3(0, lift, radius)
-    ));
-
-    // --- 4. Endpoint tick marks (small perpendicular lines at each tip) ---
-    const tickMat = new THREE.LineBasicMaterial({
-        color: cyanColor,
-        transparent: true,
-        opacity: 0.6
-    });
-
-    const tickPoints = [
-        // X-axis ticks (perpendicular in Z)
-        new THREE.Vector3(-radius, lift, -tickLen), new THREE.Vector3(-radius, lift, tickLen),
-        new THREE.Vector3(radius, lift, -tickLen), new THREE.Vector3(radius, lift, tickLen),
-        // Z-axis ticks (perpendicular in X)
-        new THREE.Vector3(-tickLen, lift, -radius), new THREE.Vector3(tickLen, lift, -radius),
-        new THREE.Vector3(-tickLen, lift, radius), new THREE.Vector3(tickLen, lift, radius),
-    ];
-    const tickGeo = new THREE.BufferGeometry().setFromPoints(tickPoints);
-    gaugeGroup.add(new THREE.LineSegments(tickGeo, tickMat));
-
-    // --- 5. Depth indicator (vertical line with bottom tick) ---
-    const depthMat = new THREE.LineDashedMaterial({
-        color: depthColor,
-        transparent: true,
-        opacity: 0.5,
-        dashSize: depth * 0.06,
-        gapSize: depth * 0.04,
-    });
-
-    const depthLine = makeDashed(
-        new THREE.Vector3(0, lift, 0),
-        new THREE.Vector3(0, lift - depth, 0)
+    // Snap Y to the actual terrain surface via a downward raycast so that visual
+    // effects (flash, explosion, labels) appear at ground level even when the
+    // default target (0,0,0) doesn't match the noise-displaced terrain height.
+    const surfaceRay = new THREE.Raycaster(
+        new THREE.Vector3(impactPos.x, 100000, impactPos.z),
+        new THREE.Vector3(0, -1, 0)
     );
-    depthLine.material = depthMat;
-    depthLine.computeLineDistances();
-    gaugeGroup.add(depthLine);
+    const surfaceHits = surfaceRay.intersectObject(moon.mesh);
+    if (surfaceHits.length > 0) impactPos.y = surfaceHits[0].point.y;
 
-    // Bottom depth tick (horizontal line at the bottom of the depth indicator)
-    const depthTickSize = diameter * 0.06;
-    const depthTickMat = new THREE.LineBasicMaterial({
-        color: depthColor,
-        transparent: true,
-        opacity: 0.5
-    });
-    const depthTickPts = [
-        new THREE.Vector3(-depthTickSize, lift - depth, 0),
-        new THREE.Vector3(depthTickSize, lift - depth, 0),
-    ];
-    const depthTickGeo = new THREE.BufferGeometry().setFromPoints(depthTickPts);
-    gaugeGroup.add(new THREE.LineSegments(depthTickGeo, depthTickMat));
+    // Terrain deformation
+    moon.addCrater(impactPos, diameter / 2, state.params.angle);
 
-    // Top depth tick
-    const topTickPts = [
-        new THREE.Vector3(-depthTickSize, lift, 0),
-        new THREE.Vector3(depthTickSize, lift, 0),
-    ];
-    const topTickGeo = new THREE.BufferGeometry().setFromPoints(topTickPts);
-    gaugeGroup.add(new THREE.LineSegments(topTickGeo, depthTickMat));
-}
+    // Impact flash light
+    impactLight.position.copy(impactPos);
+    impactLight.position.y += 1000;
+    const flashIntensity = Math.min(15, 3 + Math.floor(energy / 1e14));
+    impactLight.intensity = flashIntensity;
 
-// --- GUI / Controls ---
-function setupInput(id, paramKey, displayId, unit = '') {
-    const input = document.getElementById(id);
-    const display = document.getElementById(displayId);
+    // Flash sprite
+    const flashSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        color: 0xffffcc, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending,
+    }));
+    const flashSize = Math.min(diameter * 0.8, 50000);
+    flashSprite.scale.set(flashSize, flashSize, 1);
+    flashSprite.position.copy(impactPos);
+    flashSprite.position.y += 200;
+    scene.add(flashSprite);
 
-    if (input) {
-        input.addEventListener('input', (e) => {
-            const val = Number(e.target.value);
-            params[paramKey] = val;
-            display.innerText = val + unit;
-            updateCurve(); // Real-time curve update
-        });
-    }
-}
-
-setupInput('inp-velocity', 'velocity', 'val-velocity', ' km/s');
-setupInput('inp-angle', 'angle', 'val-angle', ' deg');
-
-// Logarithmic Mass Input
-const massInput = document.getElementById('inp-mass');
-const massDisplay = document.getElementById('val-mass');
-if (massInput && massDisplay) {
-    massInput.addEventListener('input', (e) => {
-        const exp = Number(e.target.value); // 3 to 10
-        const val = Math.pow(10, exp);
-        params.mass = val;
-        massDisplay.innerText = val.toExponential(1) + ' kg';
-        updateCurve(); // Real-time curve update
-    });
-}
-
-const densitySelect = document.getElementById('inp-density');
-if (densitySelect) {
-    densitySelect.addEventListener('change', (e) => {
-        params.density = Number(e.target.value);
-    });
-}
-
-const fireBtn = document.getElementById('fire-btn');
-if (fireBtn) {
-    fireBtn.addEventListener('click', () => {
-        fireProjectile();
-    });
-}
-
-const resetBtn = document.getElementById('reset-btn');
-if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
-        // Reset Logic
-        // 1. Clear Projectiles
-        for (let p of projectiles) {
-            p.destroy();
+    let flashLife = 1.0;
+    const fadeFlash = () => {
+        flashLife -= 0.04;
+        if (flashLife > 0) {
+            flashSprite.material.opacity = flashLife;
+            flashSprite.scale.multiplyScalar(1.03);
+            impactLight.intensity = flashIntensity * flashLife;
+            requestAnimationFrame(fadeFlash);
+        } else {
+            scene.remove(flashSprite);
+            flashSprite.material.dispose();
+            impactLight.intensity = 0;
         }
-        projectiles.length = 0;
+    };
+    fadeFlash();
 
-        // 2. Clear Craters (Reload Page or Clear Mesh?)
-        // Reloading page is simplest but jarring.
-        // Let's reload page for true reset as crater deformation is permanent on mesh.
-        location.reload();
-    });
-}
+    // Particle explosion
+    explosionSystem.trigger(impactPos, Math.min(500, 100 + Math.floor(energy / 1000)), diameter);
 
-// --- Morphology Canvas ---
-function drawCraterProfile(isComplex) {
-    const canvas = document.getElementById('craterProfile');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
-
-    ctx.clearRect(0, 0, w, h);
-
-    // Draw ground line (faint)
-    ctx.strokeStyle = "rgba(100, 200, 255, 0.4)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, h / 4);
-    ctx.lineTo(w, h / 4);
-    ctx.stroke();
-
-    // Draw Crater Profile Curve
-    ctx.strokeStyle = isComplex ? "#ffb86c" : "#00ff88"; // Match text color
-    ctx.shadowColor = ctx.strokeStyle;
-    ctx.shadowBlur = 10;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-
-    const cw = w * 0.8; // Crater width
-    const startX = (w - cw) / 2;
-    const endX = startX + cw;
-    const groundY = h / 4;
-    const rimY = h / 4 - 10;
-    const bottomY = h - 15;
-
-    ctx.moveTo(0, groundY);
-    ctx.lineTo(startX - 20, groundY); // Flat ground left
-    // Rim up
-    ctx.lineTo(startX, rimY);
-
-    if (isComplex) {
-        // Complex profile: terraced walls, central peak
-        ctx.bezierCurveTo(startX + cw * 0.2, bottomY, startX + cw * 0.4, bottomY, w / 2, bottomY - 30); // Left wall to center peak
-        ctx.bezierCurveTo(endX - cw * 0.4, bottomY, endX - cw * 0.2, bottomY, endX, rimY); // Center peak to right wall
-    } else {
-        // Simple profile: smooth bowl
-        ctx.bezierCurveTo(startX + cw * 0.1, bottomY + 20, endX - cw * 0.1, bottomY + 20, endX, rimY);
-    }
-
-    // Rim down
-    ctx.lineTo(endX + 20, groundY);
-    ctx.lineTo(w, groundY); // Flat ground right
-
-    ctx.stroke();
-
-    // Draw Fill (Visual weight)
-    ctx.lineTo(w, h); // Down
-    ctx.lineTo(0, h); // Left
-    ctx.closePath();
-    ctx.fillStyle = isComplex ? "rgba(255, 184, 108, 0.15)" : "rgba(0, 255, 136, 0.15)";
-    ctx.fill();
-
-    // Reset shadow
-    ctx.shadowBlur = 0;
-}
-
-// --- Cinematic Camera Flight ---
-function flyToCrater(targetPos, diameter) {
-    const startCamPos = camera.position.clone();
-    const startTarget = controls.target.clone();
-
-    // Calculate a good viewing distance based on crater size (min 2km away)
-    const viewDist = Math.max(2000, diameter * 2.0);
-    // Position camera diagonally up and back from the crater
-    const camOffset = new THREE.Vector3(targetPos.x, targetPos.y + viewDist * 0.6, targetPos.z + viewDist);
-
-    let frame = 0;
-    const duration = 60; // 1 second at 60fps
-
-    function animateFlight() {
-        frame++;
-        const t = frame / duration;
-        // Ease Out Cubic: fast start, slow finish
-        const ease = 1 - Math.pow(1 - t, 3);
-
-        camera.position.lerpVectors(startCamPos, camOffset, ease);
-        controls.target.lerpVectors(startTarget, targetPos, ease);
-        controls.update();
-
-        if (frame < duration) {
-            requestAnimationFrame(animateFlight);
+    // Camera shake
+    const shakeIntensity = Math.min(800, 100 + energy / 1e14);
+    const baseCamPos = camera.position.clone();
+    let shakeTime = 0;
+    const shakeCamera = () => {
+        shakeTime += 0.05;
+        if (shakeTime < 1.0) {
+            const decay = 1.0 - shakeTime;
+            camera.position.x = baseCamPos.x + (Math.random() - 0.5) * shakeIntensity * decay;
+            camera.position.y = baseCamPos.y + (Math.random() - 0.5) * shakeIntensity * decay * 0.5;
+            requestAnimationFrame(shakeCamera);
+        } else {
+            camera.position.copy(baseCamPos);
         }
-    }
-    animateFlight();
+    };
+    shakeCamera();
+
+    soundManager.playExplosion();
+
+    // Reset inbound state
+    state.isProjectileInbound = false;
+    const countdownBox = document.getElementById('countdown-box');
+    if (countdownBox) countdownBox.style.display = 'none';
+
+    const fireBtn = document.getElementById('fire-btn');
+    if (fireBtn) { fireBtn.disabled = false; fireBtn.innerText = 'FIRE PROJECTILE'; }
+
+    // Update HUD and charts (also increments impactCount)
+    updateStats(energy, diameter, depth, mass, projectile.radius * 2);
+
+    // Holographic crater gauge + label
+    createImpactMarker(
+        scene, impactPos, diameter, depth, state.impactCount,
+        (pos, dia) => flyToCrater(camera, controls, pos, dia)
+    );
 }
 
-// --- Loop ---
-const clock = new THREE.Clock();
+// =============================================================
+// UI Init
+// =============================================================
+initCharts();
+
+initPointerHandlers({
+    camera,
+    moonMesh: moon.mesh,
+    earthMesh,
+    reticule,
+    targetMarker,
+    onEarthClick,
+});
+
+initControlBindings({
+    onFire:  () => {
+        if (state.currentMode === 'earth') fireEarthProjectile();
+        else fireProjectile();
+    },
+    onReset: () => location.reload(),
+});
+
+// =============================================================
+// Render Loop
+// =============================================================
 const timeStep = 1 / 60;
+let prevTime   = performance.now();
 
 function animate() {
     requestAnimationFrame(animate);
-    render();
-}
 
-function render() {
-    const delta = clock.getDelta();
+    const now   = performance.now();
+    const delta = (now - prevTime) / 1000; // ms → seconds
+    prevTime    = now;
 
     world.step(timeStep, delta, 3);
 
     // Slow Earth rotation
     earthMesh.rotation.y += 0.0001 * delta;
 
-    // Update Countdown
-    if (isProjectileInbound && timeToImpact > 0) {
-        timeToImpact -= delta;
-        if (timeToImpact < 0) timeToImpact = 0;
-        if (uiTimeVal) uiTimeVal.innerText = timeToImpact.toFixed(2);
+    // Countdown timer
+    if (state.isProjectileInbound && state.timeToImpact > 0) {
+        state.timeToImpact = Math.max(0, state.timeToImpact - delta);
+        const el = document.getElementById('time-val');
+        if (el) el.innerText = state.timeToImpact.toFixed(2);
     }
 
     explosionSystem.update(delta);
-    controls.update();
+    moon.updateDeformations(delta);
 
-    for (let i = projectiles.length - 1; i >= 0; i--) {
-        const p = projectiles[i];
-
-        if (p.shouldDestroy) {
-            p.destroy();
-            projectiles.splice(i, 1);
-        } else if (!p.mesh && !p.body) {
-            projectiles.splice(i, 1);
-        } else {
-            p.update();
+    // Stream Earth tiles when in Earth mode
+    if (state.currentMode === 'earth') {
+        earthTiles.update();
+        // Hide loading text once the first tiles have arrived
+        if (state.earth.tileset?.stats?.inFrustum > 0) {
+            document.getElementById('earth-loading')?.classList.add('hidden');
         }
     }
 
-    // Scale reticules dynamically based on camera distance 
-    const distTarget = camera.position.distanceTo(reticule.position);
-    // Base scale 1 at 50,000m. Allow it to shrink down to 0.1 when very close.
-    const scaleFactor = Math.max(0.1, distTarget / 50000);
+    controls.update();
+
+    // Update / cull projectiles
+    for (let i = state.projectiles.length - 1; i >= 0; i--) {
+        const p = state.projectiles[i];
+        if (p.shouldDestroy || (!p.mesh && !p.body)) {
+            p.destroy?.();
+            state.projectiles.splice(i, 1);
+        } else {
+            p.update(delta, pendingImpactPos);
+        }
+    }
+
+    // Scale reticules by camera distance so they stay readable at any zoom
+    const dist        = camera.position.distanceTo(reticule.position);
+    const scaleFactor = Math.max(0.1, dist / 50000);
     reticule.scale.set(scaleFactor, 1, scaleFactor);
     targetMarker.scale.set(scaleFactor, 1, scaleFactor);
 
@@ -1116,6 +832,7 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
     labelRenderer.setSize(window.innerWidth, window.innerHeight);
 });
 

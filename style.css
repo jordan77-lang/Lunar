@@ -457,3 +457,207 @@ button#fire-btn.pulsing {
   font-weight: bold;
   color: #00ff88;
 }
+
+/* ============================================================
+   Earth Mode Styles
+   ============================================================ */
+
+#earth-container {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  /* Sits above the Three.js canvas; tiles render into the same canvas
+     behind this overlay which is transparent except for UI widgets. */
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s ease-in-out;
+}
+
+#earth-container.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#earth-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  color: #88c0d0;
+  font-size: 20px;
+  letter-spacing: 2px;
+  animation: pulse-glow 2s infinite;
+  pointer-events: none;
+}
+
+#earth-loading.hidden {
+  display: none;
+}
+
+/* --- Search bar (top-centre) --- */
+#earth-search-bar {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(520px, 90vw);
+}
+
+#earth-search-wrap {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: rgba(8, 12, 22, 0.88);
+  border: 1px solid rgba(100, 200, 255, 0.35);
+  border-radius: 10px;
+  padding: 8px 12px;
+  gap: 8px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+}
+
+#earth-search-icon {
+  width: 18px;
+  height: 18px;
+  color: #88c0d0;
+  flex-shrink: 0;
+}
+
+#earth-search {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  min-width: 0;
+}
+
+#earth-search::placeholder {
+  color: #556;
+}
+
+/* Google Places autocomplete dropdown styling */
+.pac-container {
+  background: rgba(8, 12, 22, 0.96) !important;
+  border: 1px solid rgba(100, 200, 255, 0.25) !important;
+  border-radius: 8px !important;
+  font-family: 'Inter', sans-serif !important;
+  backdrop-filter: blur(16px);
+}
+
+.pac-item {
+  color: #ccc !important;
+  border-top: 1px solid rgba(255,255,255,0.05) !important;
+  padding: 6px 12px !important;
+  cursor: pointer;
+}
+
+.pac-item:hover, .pac-item-selected {
+  background: rgba(0, 255, 136, 0.1) !important;
+}
+
+.pac-item-query {
+  color: #fff !important;
+}
+
+.pac-matched {
+  color: #00ff88 !important;
+}
+
+#earth-search-clear {
+  background: none;
+  border: none;
+  color: #556;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+#earth-search-clear:hover {
+  color: #fff;
+}
+
+/* --- Target confirmation strip --- */
+#earth-target-strip {
+  position: absolute;
+  bottom: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(8, 12, 22, 0.85);
+  border: 1px solid rgba(0, 255, 136, 0.4);
+  border-radius: 8px;
+  padding: 10px 18px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.15);
+  white-space: nowrap;
+  max-width: 90vw;
+}
+
+#earth-target-strip.hidden {
+  display: none;
+}
+
+#earth-target-icon {
+  font-size: 16px;
+}
+
+#earth-target-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #00ff88;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+
+#earth-target-coords {
+  font-size: 11px;
+  color: #88c0d0;
+  font-family: monospace;
+}
+
+/* --- Return to Moon button --- */
+#btn-return-moon {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: 10px 20px;
+  background: rgba(10, 15, 25, 0.85);
+  border: 1px solid rgba(100, 200, 255, 0.4);
+  color: #88c0d0;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  letter-spacing: 1px;
+  border-radius: 8px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: all 0.2s;
+  display: none;
+}
+
+#btn-return-moon:hover {
+  background: rgba(40, 60, 90, 0.9);
+  color: #fff;
+  border-color: #fff;
+}

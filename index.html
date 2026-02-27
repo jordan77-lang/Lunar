@@ -7,10 +7,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lunar Impact Simulator</title>
   <link rel="stylesheet" href="./style.css">
+  <!-- Google Maps JS API — replace YOUR_API_KEY with your Maps Platform key.
+       The "places" library powers the Autocomplete search box.            -->
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDGGUK5b09T90xyhqSaPfo5_5OCVMIGqso&libraries=places"
+    async
+    defer
+  ></script>
 </head>
 
 <body>
   <div id="app"></div>
+
+  <!-- Earth View Container -->
+  <div id="earth-container">
+    <!-- 3D Tiles render directly into the main Three.js canvas;
+         this container holds the search bar and Earth-mode HUD only. -->
+
+    <!-- Search bar -->
+    <div id="earth-search-bar">
+      <div id="earth-search-wrap">
+        <svg id="earth-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input
+          id="earth-search"
+          type="text"
+          placeholder="Search city or address… (e.g. Phoenix, AZ)"
+          autocomplete="off"
+        />
+        <button id="earth-search-clear" title="Clear">✕</button>
+      </div>
+    </div>
+
+    <!-- Target location confirmation strip -->
+    <div id="earth-target-strip" class="hidden">
+      <span id="earth-target-icon">🎯</span>
+      <span id="earth-target-name">—</span>
+      <span id="earth-target-coords"></span>
+    </div>
+
+    <div id="earth-loading">Loading Earth Terrain…</div>
+    <button id="btn-return-moon">RETURN TO MOON</button>
+  </div>
 
   <!-- Countdown Overlay -->
   <div id="countdown-box">

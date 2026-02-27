@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm info \"3d-tiles-renderer@0.3\" version)",
+      "Bash(npm info \"3d-tiles-renderer@0.3.43\" peerDependencies)",
+      "Bash(npm install 3d-tiles-renderer@0.3.46)"
+    ]
+  }
+}

@@ -17,6 +17,9 @@ export class Explosion {
 
         // --- Phase 3: Radial Ray Burst (brief starburst lines) ---
         this._spawnRayBurst(position, craterDiameter);
+
+        // --- Phase 4: Seismic Shockwave Ring (expands at ~3 km/s) ---
+        this._spawnShockwave(position, craterDiameter);
     }
 
     _spawnEjecta(position, count, craterDiameter) {
@@ -158,6 +161,41 @@ export class Explosion {
         });
     }
 
+    _spawnShockwave(position, craterDiameter) {
+        // Ring built at unit radius (1 m) — scale drives expansion each frame.
+        // Thickness is ~3% of starting diameter so it stays a crisp line.
+        const startRadius = Math.max(500, craterDiameter * 0.5);
+        const thickness   = Math.max(50,  craterDiameter * 0.015);
+        const geometry    = new THREE.RingGeometry(1 - thickness / startRadius, 1, 128);
+
+        const material = new THREE.MeshBasicMaterial({
+            color: 0xfff0cc,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.9,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+
+        const ring = new THREE.Mesh(geometry, material);
+        // Lay flat on the lunar surface (ring geometry faces +Z by default)
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.copy(position);
+        ring.position.y += 80; // slight lift to avoid z-fighting with terrain
+        ring.scale.setScalar(startRadius);
+        this.scene.add(ring);
+
+        this.systems.push({
+            mesh: ring,
+            velocities: null,
+            life: 3.0,
+            maxLife: 3.0,
+            type: 'shockwave',
+            startRadius,
+            speed: 3000 // m/s — seismic/ejecta curtain front speed
+        });
+    }
+
     update(delta) {
         for (let i = this.systems.length - 1; i >= 0; i--) {
             const s = this.systems[i];
@@ -228,6 +266,14 @@ export class Explosion {
             } else if (s.type === 'rays') {
                 // Just fade out
                 s.mesh.material.opacity = Math.max(0, lifeRatio * 0.8);
+
+            } else if (s.type === 'shockwave') {
+                // Expand outward at s.speed m/s, fade as it grows
+                const elapsed = 1.0 - lifeRatio; // 0 → 1
+                const currentRadius = s.startRadius + s.speed * elapsed;
+                s.mesh.scale.setScalar(currentRadius);
+                // Ease-out fade: sharp initial pulse, gentle tail-off
+                s.mesh.material.opacity = Math.max(0, lifeRatio * lifeRatio * 0.85);
             }
         }
     }

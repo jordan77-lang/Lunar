@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "3d-tiles-renderer": "^0.3.46",
     "cannon-es": "^0.20.0",
     "chart.js": "^4.5.1",
     "simplex-noise": "^4.0.3",
