@@ -34,6 +34,12 @@ export function initPointerHandlers({ camera, moonMesh, earthMesh, reticule, tar
     const groundHit = new THREE.Vector3();
 
     function onPointerMove(event) {
+        if (state.currentMode === 'transitioning') {
+            reticule.visible = false;
+            document.body.style.cursor = 'default';
+            return;
+        }
+
         pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
         pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(pointer, camera);
@@ -79,6 +85,8 @@ export function initPointerHandlers({ camera, moonMesh, earthMesh, reticule, tar
     }
 
     function onPointerDown(event) {
+        if (state.currentMode === 'transitioning') return;
+
         // Ignore clicks on UI overlay elements in all modes
         if (
             event.target.closest('#ui-controls') ||

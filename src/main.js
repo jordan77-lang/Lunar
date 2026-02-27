@@ -356,6 +356,8 @@ let savedEarthCamTarget = new THREE.Vector3();
 
 function onEarthClick() {
     state.currentMode = 'transitioning';
+    reticule.visible = false;
+    targetMarker.visible = false;
 
     // Immediately hide Moon impacts + terrain during the transition flight out
     moonImpactsGroup.visible = false;
@@ -436,6 +438,9 @@ function updateEarthTargetStrip(name, lat, lng) {
 
 btnReturnMoon.addEventListener('click', () => {
     state.currentMode = 'transitioning';
+    reticule.visible = false;
+    targetMarker.visible = false;
+
     earthContainer.classList.remove('active');
     btnReturnMoon.style.display = 'none';
     document.querySelector('#ui-container h1').innerText = 'LUNAR IMPACT';
@@ -562,7 +567,7 @@ function fireEarthProjectile() {
     // In Earth mode state.params.target is set by clicking on the ground plane,
     // defaulting to (0,0,0) = tile origin if the user hasn't clicked yet.
     const impactPos = state.params.target.clone();
-    
+
     pendingImpactPos.copy(impactPos);
 
     const v = state.params.velocity * 1000;
