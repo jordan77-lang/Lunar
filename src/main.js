@@ -562,7 +562,7 @@ function fireEarthProjectile() {
     // In Earth mode state.params.target is set by clicking on the ground plane,
     // defaulting to (0,0,0) = tile origin if the user hasn't clicked yet.
     const impactPos = state.params.target.clone();
-    impactPos.y = 0; // snap to surface
+    
     pendingImpactPos.copy(impactPos);
 
     const v = state.params.velocity * 1000;
@@ -885,6 +885,7 @@ initPointerHandlers({
     reticule,
     targetMarker,
     onEarthClick,
+    earthTilesGroup: earthTiles.group,
 });
 
 initControlBindings({

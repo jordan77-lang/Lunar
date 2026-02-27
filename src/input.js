@@ -25,8 +25,9 @@ const pointer = new THREE.Vector2();
  * @param {THREE.Mesh} deps.reticule       - Red targeting ring (hover)
  * @param {THREE.Mesh} deps.targetMarker   - Green targeting ring (confirmed target)
  * @param {function}   deps.onEarthClick   - Called when user clicks the Earth
+ * @param {THREE.Group} deps.earthTilesGroup - The 3D Tiles grouping to raycast against
  */
-export function initPointerHandlers({ camera, moonMesh, earthMesh, reticule, targetMarker, onEarthClick }) {
+export function initPointerHandlers({ camera, moonMesh, earthMesh, reticule, targetMarker, onEarthClick, earthTilesGroup }) {
     // Flat ground plane at y=0 for Earth-mode reticule targeting.
     // The ENU frame places the tile surface at y=0, so this matches the terrain.
     const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -38,15 +39,21 @@ export function initPointerHandlers({ camera, moonMesh, earthMesh, reticule, tar
         raycaster.setFromCamera(pointer, camera);
 
         if (state.currentMode === 'earth') {
-            // Show reticule hovering on the flat ENU ground plane
-            if (raycaster.ray.intersectPlane(groundPlane, groundHit)) {
-                reticule.position.set(groundHit.x, 1, groundHit.z);
-                reticule.visible = true;
-                document.body.style.cursor = 'crosshair';
-            } else {
-                reticule.visible = false;
-                document.body.style.cursor = 'default';
+            // Raycast against the actual Google Maps 3D Tiles geometry.
+            // When tiles are loading, early hits might miss empty areas, so we fallback gracefully.
+            if (earthTilesGroup && earthTilesGroup.children.length > 0) {
+                const hits = raycaster.intersectObject(earthTilesGroup, true);
+                if (hits.length > 0) {
+                    // Hoverreticule contours to the 3D surface elevation
+                    reticule.position.copy(hits[0].point);
+                    reticule.position.y += 1; // slight offset above mesh
+                    reticule.visible = true;
+                    document.body.style.cursor = 'crosshair';
+                    return;
+                }
             }
+            reticule.visible = false;
+            document.body.style.cursor = 'default';
             return;
         }
 
@@ -88,10 +95,14 @@ export function initPointerHandlers({ camera, moonMesh, earthMesh, reticule, tar
         if (state.currentMode === 'earth') {
             // Only set target on left-click (button 0).
             // Let OrbitControls handle right-click (pan) and middle-click.
-            if (event.button === 0 && raycaster.ray.intersectPlane(groundPlane, groundHit)) {
-                state.params.target.set(groundHit.x, 0, groundHit.z);
-                targetMarker.position.set(groundHit.x, 1, groundHit.z);
-                targetMarker.visible = true;
+            if (event.button === 0 && earthTilesGroup && earthTilesGroup.children.length > 0) {
+                const hits = raycaster.intersectObject(earthTilesGroup, true);
+                if (hits.length > 0) {
+                    state.params.target.set(hits[0].point.x, hits[0].point.y, hits[0].point.z);
+                    targetMarker.position.copy(hits[0].point);
+                    targetMarker.position.y += 1;
+                    targetMarker.visible = true;
+                }
             }
             return;
         }
