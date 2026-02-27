@@ -667,7 +667,8 @@ function handleEarthImpact(projectile) {
         metalness: 0.0,
         transparent: true,
         opacity: 0.85,
-        depthWrite: true,
+        depthWrite: false,
+        depthTest: false, // Force it to draw over the earth tiles even with negative Y
     }));
     craterMesh.position.copy(impactPos);
     craterMesh.position.y += 5; // slight offset above ground to avoid z-fighting
