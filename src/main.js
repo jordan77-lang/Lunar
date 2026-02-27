@@ -355,19 +355,21 @@ let savedEarthCamTarget = new THREE.Vector3();
 
 function onEarthClick() {
     state.currentMode = 'transitioning';
+
+    // Immediately hide Moon impacts + terrain during the transition flight out
+    moonImpactsGroup.visible = false;
+    scene.remove(moon.mesh);
+    scene.remove(moon.horizonMesh);
+
     const result = transitionToEarth(camera, controls, earthGroup, earthRadius, () => {
         earthContainer.classList.add('active');
         btnReturnMoon.style.display = 'block';
         document.querySelector('#ui-container h1').innerText = 'EARTH IMPACT';
 
-        // --- Visual isolation: remove Moon terrain/impacts, show Earth impacts ---
-        scene.remove(moon.mesh);
-        scene.remove(moon.horizonMesh);
-        moonImpactsGroup.visible = false;
+        // Show Earth impacts only after we arrive
         earthImpactsGroup.visible = true;
 
-        world.removeBody(moon.body);
-        world.addBody(earthGroundBody);
+        // --- Physics isolation: remove Moon entirely, enable Earth ground ---
         world.gravity.set(0, -EARTH_GRAVITY, 0);
 
         state.currentMode = 'earth';
@@ -431,6 +433,18 @@ btnReturnMoon.addEventListener('click', () => {
     btnReturnMoon.style.display = 'none';
     document.querySelector('#ui-container h1').innerText = 'LUNAR IMPACT';
 
+    // Immediately hide Earth impacts during the transition flight back
+    earthImpactsGroup.visible = false;
+    // Hide Earth-specific UI overlays completely
+    const strip = document.getElementById('earth-target-strip');
+    if (strip) strip.classList.add('hidden');
+    // Clear Search bar value to dismiss any open autocomplete dropdowns
+    const searchInput = document.getElementById('pac-input');
+    if (searchInput) searchInput.value = '';
+
+    // Immediately destroy Tiles so they don't render in the background frame
+    earthTiles.dispose();
+
     // Get the Earth sphere's world-space centre for the departure animation.
     const earthCenterWorld = new THREE.Vector3();
     earthGroup.getWorldPosition(earthCenterWorld);
@@ -444,25 +458,15 @@ btnReturnMoon.addEventListener('click', () => {
     // clamp the camera while it travels the full Earth→Moon distance.
     // Restore Moon constraints only in onComplete, after the flight lands.
     returnToMoon(camera, controls, savedEarthCamPos, savedEarthCamTarget, earthCenterWorld, earthRadius, () => {
-        earthTiles.dispose();
-
-        // --- Visual isolation: restore Moon terrain/impacts, hide Earth impacts ---
+        // --- Visual isolation: restore Moon terrain/impacts ---
+        // (Earth impacts and Tiles were already hidden when the flight began)
         scene.add(moon.mesh);
         scene.add(moon.horizonMesh);
         moonImpactsGroup.visible = true;
-        earthImpactsGroup.visible = false;
 
         world.addBody(moon.body);
         world.removeBody(earthGroundBody);
         world.gravity.set(0, -MOON_GRAVITY, 0);
-
-        // Hide Earth-specific UI overlays completely
-        const strip = document.getElementById('earth-target-strip');
-        if (strip) strip.classList.add('hidden');
-
-        // Clear Search bar value to dismiss any open autocomplete dropdowns
-        const searchInput = document.getElementById('pac-input');
-        if (searchInput) searchInput.value = '';
 
         controls.minDistance = 2000;
         controls.maxDistance = 350000;
