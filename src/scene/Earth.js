@@ -18,8 +18,15 @@
 
 import * as THREE from 'three';
 import { TilesRenderer } from '3d-tiles-renderer';
-import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/plugins';
+import { GoogleCloudAuthPlugin, GLTFExtensionsPlugin } from '3d-tiles-renderer/plugins';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { state } from '../state.js';
+
+// Shared DRACOLoader instance — reused across tile loads to avoid
+// re-initialising the WASM decoder on every flyToLocation call.
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+dracoLoader.setDecoderConfig({ type: 'js' });  // JS decoder works everywhere
 
 // WGS-84 semi-major axis (metres)
 const WGS84_A = 6378137.0;
@@ -106,6 +113,10 @@ export class EarthTiles {
         tiles.registerPlugin(new GoogleCloudAuthPlugin({
             apiToken: this.apiKey,
             autoRefreshToken: true,
+        }));
+        tiles.registerPlugin(new GLTFExtensionsPlugin({
+            dracoLoader,
+            autoDispose: false,  // we manage the shared DRACOLoader ourselves
         }));
         tiles.setCamera(this.camera);
         tiles.setResolutionFromRenderer(this.camera, this.renderer);
