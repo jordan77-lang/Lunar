@@ -9,32 +9,32 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
-export function createImpactMarker(scene, position, diameter, depth, impactCount, onClickFly) {
+export function createImpactMarker(parentGroup, position, diameter, depth, impactCount, onClickFly) {
     // --- CSS2D floating label ---
     const div = document.createElement('div');
     div.className = 'impact-marker';
     div.innerHTML = `<span class="marker-id">IMPACT ${impactCount}</span><br>` +
-                    `Ø ${(diameter / 1000).toFixed(1)} km<br>` +
-                    `↓ ${(depth / 1000).toFixed(1)} km`;
+        `Ø ${(diameter / 1000).toFixed(1)} km<br>` +
+        `↓ ${(depth / 1000).toFixed(1)} km`;
     div.onclick = () => onClickFly(position, diameter);
 
     const label = new CSS2DObject(div);
     label.position.copy(position);
     // Lift label above rim; minimum 500 m to avoid clipping small craters
     label.position.y += Math.max(500, diameter * 0.15);
-    scene.add(label);
+    parentGroup.add(label);
 
     // --- Holographic gauge group ---
     const gaugeGroup = new THREE.Group();
     gaugeGroup.position.copy(position);
-    scene.add(gaugeGroup);
+    parentGroup.add(gaugeGroup);
 
-    const lift         = Math.max(1, diameter * 0.015);
-    const radius       = diameter / 2;
-    const tickLen      = diameter * 0.04;
+    const lift = Math.max(1, diameter * 0.015);
+    const radius = diameter / 2;
+    const tickLen = diameter * 0.04;
     const ringThickness = diameter * 0.012;
 
-    const cyanColor  = 0x00ccff;
+    const cyanColor = 0x00ccff;
     const depthColor = 0xff6644;
 
     // 1. Diameter ring
@@ -86,9 +86,9 @@ export function createImpactMarker(scene, position, diameter, depth, impactCount
     const tickMat = new THREE.LineBasicMaterial({ color: cyanColor, transparent: true, opacity: 0.6 });
     const tickPts = [
         new THREE.Vector3(-radius, lift, -tickLen), new THREE.Vector3(-radius, lift, tickLen),
-        new THREE.Vector3( radius, lift, -tickLen), new THREE.Vector3( radius, lift, tickLen),
+        new THREE.Vector3(radius, lift, -tickLen), new THREE.Vector3(radius, lift, tickLen),
         new THREE.Vector3(-tickLen, lift, -radius), new THREE.Vector3(tickLen, lift, -radius),
-        new THREE.Vector3(-tickLen, lift,  radius), new THREE.Vector3(tickLen, lift,  radius),
+        new THREE.Vector3(-tickLen, lift, radius), new THREE.Vector3(tickLen, lift, radius),
     ];
     gaugeGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(tickPts), tickMat));
 
@@ -107,12 +107,12 @@ export function createImpactMarker(scene, position, diameter, depth, impactCount
     gaugeGroup.add(depthLine);
 
     const depthTickSize = diameter * 0.06;
-    const depthTickMat  = new THREE.LineBasicMaterial({ color: depthColor, transparent: true, opacity: 0.5 });
+    const depthTickMat = new THREE.LineBasicMaterial({ color: depthColor, transparent: true, opacity: 0.5 });
 
     const makeHorizTick = (y) => new THREE.LineSegments(
         new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(-depthTickSize, y, 0),
-            new THREE.Vector3( depthTickSize, y, 0),
+            new THREE.Vector3(depthTickSize, y, 0),
         ]),
         depthTickMat
     );

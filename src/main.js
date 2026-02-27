@@ -292,6 +292,14 @@ const moon = new Moon(scene, world);
 const explosionSystem = new Explosion(scene);
 const soundManager = new SoundManager();
 
+// Isolate impacts into mode-specific groups so they don't bleed visually
+const moonImpactsGroup = new THREE.Group();
+const earthImpactsGroup = new THREE.Group();
+scene.add(moonImpactsGroup);
+// Earth impacts are hidden by default, added when entering Earth mode
+scene.add(earthImpactsGroup);
+earthImpactsGroup.visible = false;
+
 // Earth ground plane — added/removed from the physics world when
 // switching modes so projectile collisions stay isolated.
 const earthGroundShape = new CANNON.Plane();
@@ -352,9 +360,12 @@ function onEarthClick() {
         btnReturnMoon.style.display = 'block';
         document.querySelector('#ui-container h1').innerText = 'EARTH IMPACT';
 
-        // --- Physics isolation: remove Moon entirely, enable Earth ground ---
+        // --- Visual isolation: remove Moon terrain/impacts, show Earth impacts ---
         scene.remove(moon.mesh);
         scene.remove(moon.horizonMesh);
+        moonImpactsGroup.visible = false;
+        earthImpactsGroup.visible = true;
+
         world.removeBody(moon.body);
         world.addBody(earthGroundBody);
         world.gravity.set(0, -EARTH_GRAVITY, 0);
@@ -435,12 +446,23 @@ btnReturnMoon.addEventListener('click', () => {
     returnToMoon(camera, controls, savedEarthCamPos, savedEarthCamTarget, earthCenterWorld, earthRadius, () => {
         earthTiles.dispose();
 
-        // --- Physics isolation: restore Moon entirely, remove Earth ground ---
+        // --- Visual isolation: restore Moon terrain/impacts, hide Earth impacts ---
         scene.add(moon.mesh);
         scene.add(moon.horizonMesh);
+        moonImpactsGroup.visible = true;
+        earthImpactsGroup.visible = false;
+
         world.addBody(moon.body);
         world.removeBody(earthGroundBody);
         world.gravity.set(0, -MOON_GRAVITY, 0);
+
+        // Hide Earth-specific UI overlays completely
+        const strip = document.getElementById('earth-target-strip');
+        if (strip) strip.classList.add('hidden');
+
+        // Clear Search bar value to dismiss any open autocomplete dropdowns
+        const searchInput = document.getElementById('pac-input');
+        if (searchInput) searchInput.value = '';
 
         controls.minDistance = 2000;
         controls.maxDistance = 350000;
@@ -645,7 +667,7 @@ function handleEarthImpact(projectile) {
     craterMesh.position.copy(impactPos);
     craterMesh.position.y += 5; // slight offset above ground to avoid z-fighting
     craterMesh.renderOrder = 10;
-    scene.add(craterMesh);
+    earthImpactsGroup.add(craterMesh);
 
     // Flash + explosion (reuse existing systems)
     impactLight.position.copy(impactPos);
@@ -710,7 +732,7 @@ function handleEarthImpact(projectile) {
         state.earth.impactLocation.name = locationName;
         updateStats(energy, diameter, depth, mass, projectile.radius * 2, locationName);
         createImpactMarker(
-            scene, impactPos, diameter, depth, state.impactCount,
+            earthImpactsGroup, impactPos, diameter, depth, state.impactCount,
             (pos, dia) => flyToCrater(camera, controls, pos, dia)
         );
     });
@@ -829,7 +851,7 @@ function handleImpact(projectile) {
 
     // Holographic crater gauge + label
     createImpactMarker(
-        scene, impactPos, diameter, depth, state.impactCount,
+        moonImpactsGroup, impactPos, diameter, depth, state.impactCount,
         (pos, dia) => flyToCrater(camera, controls, pos, dia)
     );
 }
