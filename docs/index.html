@@ -3,17 +3,16 @@
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌑</text></svg>" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lunar Impact Simulator</title>
   <!-- Google Maps JS API — replace YOUR_API_KEY with your Maps Platform key.
        The "places" library powers the Autocomplete search box.            -->
   <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDGGUK5b09T90xyhqSaPfo5_5OCVMIGqso&libraries=places&loading=async"
-    async
-    defer
-  ></script>
-  <script type="module" crossorigin src="/Lunar/assets/index-D7VWE0kS.js"></script>
+    async defer></script>
+  <script type="module" crossorigin src="/Lunar/assets/index-CgpthVt5.js"></script>
   <link rel="stylesheet" crossorigin href="/Lunar/assets/index-SQcTBKUK.css">
 </head>
 
@@ -29,14 +28,11 @@
     <div id="earth-search-bar">
       <div id="earth-search-wrap">
         <svg id="earth-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.35-4.35" />
         </svg>
-        <input
-          id="earth-search"
-          type="text"
-          placeholder="Search city or address… (e.g. Phoenix, AZ)"
-          autocomplete="off"
-        />
+        <input id="earth-search" type="text" placeholder="Search city or address… (e.g. Phoenix, AZ)"
+          autocomplete="off" />
         <button id="earth-search-clear" title="Clear">✕</button>
       </div>
     </div>

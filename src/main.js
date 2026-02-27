@@ -352,10 +352,10 @@ function onEarthClick() {
         btnReturnMoon.style.display = 'block';
         document.querySelector('#ui-container h1').innerText = 'EARTH IMPACT';
 
-        // --- Physics isolation: disable Moon body, enable Earth ground ---
-        moon.mesh.visible = false;
-        moon.horizonMesh.visible = false;
-        moon.body.collisionResponse = false;
+        // --- Physics isolation: remove Moon entirely, enable Earth ground ---
+        scene.remove(moon.mesh);
+        scene.remove(moon.horizonMesh);
+        world.removeBody(moon.body);
         world.addBody(earthGroundBody);
         world.gravity.set(0, -EARTH_GRAVITY, 0);
 
@@ -434,10 +434,10 @@ btnReturnMoon.addEventListener('click', () => {
     returnToMoon(camera, controls, savedEarthCamPos, savedEarthCamTarget, earthCenterWorld, earthRadius, () => {
         earthTiles.dispose();
 
-        // --- Physics isolation: re-enable Moon body, remove Earth ground ---
-        moon.mesh.visible = true;
-        moon.horizonMesh.visible = true;
-        moon.body.collisionResponse = true;
+        // --- Physics isolation: restore Moon entirely, remove Earth ground ---
+        scene.add(moon.mesh);
+        scene.add(moon.horizonMesh);
+        world.addBody(moon.body);
         world.removeBody(earthGroundBody);
         world.gravity.set(0, -MOON_GRAVITY, 0);
 

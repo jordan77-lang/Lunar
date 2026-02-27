@@ -111,10 +111,10 @@ export class Moon {
         const horizonGeom = new THREE.PlaneGeometry(horizonSize, horizonSize, horizonSegs, horizonSegs);
         const hPos = horizonGeom.attributes.position;
 
-        const hInnerR   = 130000; // transparent inside here (behind playMesh)
-        const hOpaqR    = 150000; // fully opaque from here outward
+        const hInnerR = 130000; // transparent inside here (behind playMesh)
+        const hOpaqR = 150000; // fully opaque from here outward
         const hFadeStart = 900000; // start fading out at 900 km
-        const hFadeOutR  = horizonSize / 2; // fully transparent at mesh edge
+        const hFadeOutR = horizonSize / 2; // fully transparent at mesh edge
         const hColors = [];
 
         for (let i = 0; i < hPos.count; i++) {
@@ -159,7 +159,7 @@ export class Moon {
             const dSq = Math.min(x * x + y * y, R * R);
             let z = -(R - Math.sqrt(R * R - dSq));
             const n = noise3D(x * noiseScale, y * noiseScale, 0) * 400
-                    + noise3D(x * noiseScale * 4, y * noiseScale * 4, 0.5) * 100;
+                + noise3D(x * noiseScale * 4, y * noiseScale * 4, 0.5) * 100;
             z += n;
             posAttr.setZ(i, z);
         }
@@ -168,7 +168,7 @@ export class Moon {
         // vertexColors RGB only — no alpha channel needed for an opaque mesh.
         const colors = new Float32Array(posAttr.count * 3);
         for (let i = 0; i < posAttr.count; i++) {
-            colors[i * 3]     = 1.0;
+            colors[i * 3] = 1.0;
             colors[i * 3 + 1] = 1.0;
             colors[i * 3 + 2] = 1.0;
         }
@@ -207,28 +207,28 @@ export class Moon {
     // Returns an animation object for updateDeformations(), or null if nothing changed.
     _computeDeformation(config, position, radius, angle) {
         const positions = config.mesh.geometry.attributes.position;
-        const colors    = config.mesh.geometry.attributes.color;
-        const localPos  = config.mesh.worldToLocal(position.clone());
+        const colors = config.mesh.geometry.attributes.color;
+        const localPos = config.mesh.worldToLocal(position.clone());
         const v = new THREE.Vector3();
         const c = new THREE.Color();
 
-        const s  = config.size / config.segments;
+        const s = config.size / config.segments;
         const s2 = config.size / 2;
 
         const centerCol = Math.round((localPos.x + s2) / s);
         const centerRow = Math.round((s2 - localPos.y) / s);
         const clampedCol = Math.max(0, Math.min(config.segments, centerCol));
         const clampedRow = Math.max(0, Math.min(config.segments, centerRow));
-        const centerIdx  = clampedRow * (config.segments + 1) + clampedCol;
-        const surfaceZ   = positions.getZ(centerIdx);
+        const centerIdx = clampedRow * (config.segments + 1) + clampedCol;
+        const surfaceZ = positions.getZ(centerIdx);
 
-        const limit   = radius * 4.0;
+        const limit = radius * 4.0;
         const limitSq = limit * limit;
 
         let colMin = Math.floor((localPos.x - limit + s2) / s);
-        let colMax = Math.ceil( (localPos.x + limit + s2) / s);
+        let colMax = Math.ceil((localPos.x + limit + s2) / s);
         let rowMin = Math.floor((s2 - (localPos.y + limit)) / s);
-        let rowMax = Math.ceil( (s2 - (localPos.y - limit)) / s);
+        let rowMax = Math.ceil((s2 - (localPos.y - limit)) / s);
 
         colMin = Math.max(0, Math.min(config.segments, colMin));
         colMax = Math.max(0, Math.min(config.segments, colMax));
@@ -250,14 +250,14 @@ export class Moon {
 
                 const dist = Math.sqrt(distSq);
                 const startZ = v.z;
-                let targetZ  = v.z;
+                let targetZ = v.z;
                 const startC = [colors.getX(i), colors.getY(i), colors.getZ(i)];
-                let targetC  = [...startC];
+                let targetC = [...startC];
 
                 if (dist < radius) {
                     const distNorm = dist / radius;
                     const bowlDepth = CRATER_BOWL_DEPTH_RATIO * radius * (1 - distNorm * distNorm);
-                    const carvedZ   = surfaceZ - bowlDepth;
+                    const carvedZ = surfaceZ - bowlDepth;
 
                     let peakHeight = 0;
                     if (radius > COMPLEX_CRATER_RADIUS_M && dist < radius * 0.2) {
@@ -266,7 +266,7 @@ export class Moon {
                     }
 
                     targetZ = Math.min(v.z, carvedZ + peakHeight);
-                    targetC = [1.8, 1.8, 1.8];
+                    targetC = [0.55, 0.53, 0.50];
 
                 } else if (dist < radius * 1.3) {
                     const rimDistNorm = (dist - radius) / (radius * 0.3);
@@ -292,17 +292,17 @@ export class Moon {
                         }
                     }
 
-                    const noiseLow  = noise3D(v.x * 0.0001, v.y * 0.0001, dist * 0.0001);
+                    const noiseLow = noise3D(v.x * 0.0001, v.y * 0.0001, dist * 0.0001);
                     const noiseHigh = noise3D(v.x * 0.0005, v.y * 0.0005, dist * 0.0005);
-                    const fractalRays   = Math.abs(noiseLow) * 0.7 + Math.abs(noiseHigh) * 0.3;
+                    const fractalRays = Math.abs(noiseLow) * 0.7 + Math.abs(noiseHigh) * 0.3;
                     const rayMultiplier = Math.max(0.1, (1.0 + fractalRays * 2.0) * angleBias);
                     ejectaThickness *= rayMultiplier;
 
                     targetZ = v.z + height + ejectaThickness;
 
-                    const albedoBoost     = Math.pow(r_norm, -2.0) * rayMultiplier;
-                    const brightness      = 1.0 + (albedoBoost * 0.5);
-                    const finalBrightness = Math.min(2.0, brightness);
+                    const albedoBoost = Math.pow(r_norm, -2.0) * rayMultiplier;
+                    const brightness = 1.0 + (albedoBoost * 0.25);
+                    const finalBrightness = Math.min(1.0, brightness);
                     c.fromArray(colors.array, i * 3);
                     targetC = [c.r * finalBrightness, c.g * finalBrightness, c.b * finalBrightness];
                 }
@@ -332,7 +332,7 @@ export class Moon {
             const t = 1.0 - Math.pow(1.0 - d.progress, 3);
 
             const positions = d.config.mesh.geometry.attributes.position;
-            const colors    = d.config.mesh.geometry.attributes.color;
+            const colors = d.config.mesh.geometry.attributes.color;
 
             for (const v of d.deltas) {
                 positions.setZ(v.index, v.startZ + (v.targetZ - v.startZ) * t);
@@ -345,7 +345,7 @@ export class Moon {
             }
 
             positions.needsUpdate = true;
-            colors.needsUpdate    = true;
+            colors.needsUpdate = true;
             d.config.mesh.geometry.computeVertexNormals();
 
             if (d.progress >= 1.0) {
