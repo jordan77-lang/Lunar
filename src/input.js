@@ -13,7 +13,7 @@ import { updateCurve } from './ui/charts.js';
 
 const raycaster = new THREE.Raycaster();
 raycaster.layers.enable(1); // Earth mesh lives on layer 1
-const pointer   = new THREE.Vector2();
+const pointer = new THREE.Vector2();
 
 /**
  * Wire up pointermove and pointerdown for 3D targeting.
@@ -30,10 +30,10 @@ export function initPointerHandlers({ camera, moonMesh, earthMesh, reticule, tar
     // Flat ground plane at y=0 for Earth-mode reticule targeting.
     // The ENU frame places the tile surface at y=0, so this matches the terrain.
     const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const groundHit   = new THREE.Vector3();
+    const groundHit = new THREE.Vector3();
 
     function onPointerMove(event) {
-        pointer.x =  (event.clientX / window.innerWidth)  * 2 - 1;
+        pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
         pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(pointer, camera);
 
@@ -81,13 +81,14 @@ export function initPointerHandlers({ camera, moonMesh, earthMesh, reticule, tar
             event.target.closest('#earth-target-strip')
         ) return;
 
-        pointer.x =  (event.clientX / window.innerWidth)  * 2 - 1;
+        pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
         pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(pointer, camera);
 
         if (state.currentMode === 'earth') {
-            // Click places the reticule target; OrbitControls handles panning
-            if (raycaster.ray.intersectPlane(groundPlane, groundHit)) {
+            // Only set target on left-click (button 0).
+            // Let OrbitControls handle right-click (pan) and middle-click.
+            if (event.button === 0 && raycaster.ray.intersectPlane(groundPlane, groundHit)) {
                 state.params.target.set(groundHit.x, 0, groundHit.z);
                 targetMarker.position.set(groundHit.x, 1, groundHit.z);
                 targetMarker.visible = true;
@@ -126,7 +127,7 @@ export function initPointerHandlers({ camera, moonMesh, earthMesh, reticule, tar
 export function initControlBindings({ onFire, onReset }) {
     // Generic slider helper
     const bindSlider = (id, displayId, unit, setter) => {
-        const input   = document.getElementById(id);
+        const input = document.getElementById(id);
         const display = document.getElementById(displayId);
         if (!input) return;
         input.addEventListener('input', (e) => {
@@ -137,10 +138,10 @@ export function initControlBindings({ onFire, onReset }) {
     };
 
     bindSlider('inp-velocity', 'val-velocity', ' km/s', v => { state.params.velocity = v; });
-    bindSlider('inp-angle',    'val-angle',    ' deg',  v => { state.params.angle = v; });
+    bindSlider('inp-angle', 'val-angle', ' deg', v => { state.params.angle = v; });
 
     // Logarithmic mass slider (exponent → actual kg value)
-    const massInput   = document.getElementById('inp-mass');
+    const massInput = document.getElementById('inp-mass');
     const massDisplay = document.getElementById('val-mass');
     if (massInput) {
         massInput.addEventListener('input', (e) => {

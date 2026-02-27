@@ -204,7 +204,10 @@ export function returnToMoon(camera, controls, savedPos, savedTarget, earthCente
         }
 
         camera.position.copy(camPos);
-        controls.update();
+        // Force the camera up-vector upright so it doesn't spin wildly
+        // from the top-down Earth orientation.
+        camera.up.set(0, 1, 0);
+        camera.lookAt(controls.target);
 
         if (frame < TOTAL) {
             requestAnimationFrame(tick);

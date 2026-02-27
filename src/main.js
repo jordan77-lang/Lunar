@@ -366,8 +366,9 @@ function onEarthClick() {
         earthTiles.flyToLocation(lat, lng);
         document.getElementById('earth-loading').classList.remove('hidden');
 
-        // Position camera looking straight down from ~25 km altitude
-        camera.position.set(0, 25000, 0);
+        // Position camera looking down from ~25 km altitude
+        // Offset Z by 1 to prevent OrbitControls gimbal lock singularity (viewing exactly along Y axis)
+        camera.position.set(0, 25000, 1);
         camera.lookAt(0, 0, 0);
         controls.target.set(0, 0, 0);
         controls.minDistance = 200;
@@ -380,8 +381,8 @@ function onEarthClick() {
         initEarthSearch({
             onPlaceSelected: ({ lat, lng, name }) => {
                 earthTiles.flyToLocation(lat, lng);
-                // Reset camera to top-down view over new location
-                camera.position.set(0, 25000, 0);
+                // Reset camera to top-down view over new location (offset Z to avoid lock)
+                camera.position.set(0, 25000, 1);
                 camera.lookAt(0, 0, 0);
                 controls.target.set(0, 0, 0);
                 // Reset reticule target to tile origin when new location loads
