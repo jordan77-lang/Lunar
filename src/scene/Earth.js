@@ -18,7 +18,7 @@
 
 import * as THREE from 'three';
 import { TilesRenderer } from '3d-tiles-renderer';
-import { GoogleCloudAuthPlugin } from '3d-tiles-renderer';
+import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/plugins';
 import { state } from '../state.js';
 
 // WGS-84 semi-major axis (metres)
