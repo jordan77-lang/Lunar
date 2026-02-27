@@ -479,7 +479,9 @@ button#fire-btn.pulsing {
 
 #earth-container.active {
   opacity: 1;
-  pointer-events: auto;
+  /* Do NOT set pointer-events: auto here, or it blocks the whole screen.
+     Instead we let the canvas receive events, and specifically enable 
+     pointer-events on the child UI elements below. */
 }
 
 #earth-loading {
@@ -511,6 +513,7 @@ button#fire-btn.pulsing {
   align-items: center;
   gap: 8px;
   width: min(520px, 90vw);
+  pointer-events: auto;
 }
 
 #earth-search-wrap {
@@ -610,6 +613,7 @@ button#fire-btn.pulsing {
   box-shadow: 0 0 20px rgba(0, 255, 136, 0.15);
   white-space: nowrap;
   max-width: 90vw;
+  pointer-events: auto;
 }
 
 #earth-target-strip.hidden {
@@ -654,6 +658,7 @@ button#fire-btn.pulsing {
   backdrop-filter: blur(8px);
   transition: all 0.2s;
   display: none;
+  pointer-events: auto;
 }
 
 #btn-return-moon:hover {
