@@ -46,6 +46,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.sortObjects = true;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
 document.querySelector('#app').appendChild(renderer.domElement);
@@ -678,7 +679,7 @@ function handleEarthImpact(projectile) {
     }));
     craterMesh.position.copy(impactPos);
     craterMesh.position.y += 5; // slight offset above ground to avoid z-fighting
-    craterMesh.renderOrder = 10;
+    craterMesh.renderOrder = 9999;
     earthImpactsGroup.add(craterMesh);
 
     // Flash + explosion (reuse existing systems)
@@ -688,11 +689,13 @@ function handleEarthImpact(projectile) {
     impactLight.intensity = flashIntensity;
 
     const flashSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        depthTest: false, depthWrite: false,
         color: 0xffffcc, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending,
     }));
     const flashSize = Math.min(diameter * 0.8, 50000);
     flashSprite.scale.set(flashSize, flashSize, 1);
     flashSprite.position.copy(impactPos).setY(impactPos.y + 200);
+    flashSprite.renderOrder = 9999;
     scene.add(flashSprite);
 
     let flashLife = 1.0;
@@ -804,12 +807,14 @@ function handleImpact(projectile) {
 
     // Flash sprite
     const flashSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        depthTest: false, depthWrite: false,
         color: 0xffffcc, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending,
     }));
     const flashSize = Math.min(diameter * 0.8, 50000);
     flashSprite.scale.set(flashSize, flashSize, 1);
     flashSprite.position.copy(impactPos);
     flashSprite.position.y += 200;
+    flashSprite.renderOrder = 9999;
     scene.add(flashSprite);
 
     let flashLife = 1.0;

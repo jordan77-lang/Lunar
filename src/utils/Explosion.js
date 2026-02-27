@@ -58,10 +58,12 @@ export class Explosion {
             opacity: 1,
             sizeAttenuation: true,
             depthWrite: false,
+            depthTest: false,
             blending: THREE.AdditiveBlending
         });
 
         const points = new THREE.Points(geometry, material);
+        points.renderOrder = 9999;
         this.scene.add(points);
 
         this.systems.push({
@@ -106,10 +108,12 @@ export class Explosion {
             opacity: 0.3,
             sizeAttenuation: true,
             depthWrite: false,
+            depthTest: false,
             blending: THREE.NormalBlending
         });
 
         const points = new THREE.Points(geometry, material);
+        points.renderOrder = 9999;
         this.scene.add(points);
 
         this.systems.push({
@@ -146,10 +150,13 @@ export class Explosion {
             transparent: true,
             opacity: 0.8,
             linewidth: 2,
+            depthWrite: false,
+            depthTest: false,
             blending: THREE.AdditiveBlending
         });
 
         const lines = new THREE.LineSegments(geometry, material);
+        lines.renderOrder = 9999;
         this.scene.add(lines);
 
         this.systems.push({
@@ -165,8 +172,8 @@ export class Explosion {
         // Ring built at unit radius (1 m) — scale drives expansion each frame.
         // Thickness is ~3% of starting diameter so it stays a crisp line.
         const startRadius = Math.max(500, craterDiameter * 0.5);
-        const thickness   = Math.max(50,  craterDiameter * 0.015);
-        const geometry    = new THREE.RingGeometry(1 - thickness / startRadius, 1, 128);
+        const thickness = Math.max(50, craterDiameter * 0.015);
+        const geometry = new THREE.RingGeometry(1 - thickness / startRadius, 1, 128);
 
         const material = new THREE.MeshBasicMaterial({
             color: 0xfff0cc,
@@ -174,6 +181,7 @@ export class Explosion {
             transparent: true,
             opacity: 0.9,
             depthWrite: false,
+            depthTest: false,
             blending: THREE.AdditiveBlending
         });
 
@@ -183,6 +191,7 @@ export class Explosion {
         ring.position.copy(position);
         ring.position.y += 80; // slight lift to avoid z-fighting with terrain
         ring.scale.setScalar(startRadius);
+        ring.renderOrder = 9999;
         this.scene.add(ring);
 
         this.systems.push({
